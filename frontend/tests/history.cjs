@@ -80,7 +80,7 @@ async function input(dom, selector, value) {
 }
 (async () => {
   let dom = await launch();
-  await click(dom, "Новый проект");
+  await click(dom, "New project");
   await input(dom, "#description", "A presentation draft");
   let saved = dom.window.localStorage.getItem(key);
   assert.equal(JSON.parse(saved)[0].description, "A presentation draft");
@@ -93,13 +93,13 @@ async function input(dom, selector, value) {
     dom.window.document.querySelector("#description").value,
     "A presentation draft",
   );
-  await click(dom, "Создать содержание");
+  await click(dom, "Generate content");
   await input(dom, ".slide-title", "Manual title");
   dom.window.document.querySelector('input[type="checkbox"]').click();
   await wait();
   assert.ok(dom.window.document.querySelector("#detail").disabled);
-  await click(dom, "Этому слайду");
-  await click(dom, "Применить изменения");
+  await click(dom, "This slide");
+  await click(dom, "Apply changes");
   assert.equal(rewriteRequest.scope, "slide");
   assert.equal(rewriteRequest.slide_id, "one");
   assert.equal(rewriteRequest.deck.slides[0].title, "Manual title");
@@ -117,8 +117,8 @@ async function input(dom, selector, value) {
     dom.window.document.querySelector('input[type="checkbox"]').checked,
   );
   assert.ok(dom.window.document.querySelector("#detail").disabled);
-  await click(dom, "Все проекты");
-  await click(dom, "Новый проект");
+  await click(dom, "All projects");
+  await click(dom, "New project");
   await input(dom, "#description", "Second draft");
   assert.equal(JSON.parse(dom.window.localStorage.getItem(key)).length, 2);
   dom.window.close();
