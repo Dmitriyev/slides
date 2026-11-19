@@ -273,7 +273,6 @@ function App() {
           </span>
           slide<span className="brand-light">tuner</span>
         </button>
-        <span className="top-label">CONTENT FIRST. DESIGN NEXT.</span>
         <button
           className="subtle"
           disabled={busy}
@@ -290,13 +289,11 @@ function App() {
       )}
       {!project ? (
         <main className="projects-page">
-          <div className="eyebrow">YOUR WORKSPACE</div>
           <div className="page-heading">
             <div>
               <h1>
                 My presentations<span className="green-dot">.</span>
               </h1>
-              <p>Return to your ideas. Refine them at your own pace.</p>
             </div>
             <button className="primary" onClick={() => open(fresh())}>
               <Plus size={18} /> New project
@@ -307,8 +304,7 @@ function App() {
               <span className="empty-icon">
                 <FileText size={32} />
               </span>
-              <h2>Start with your idea</h2>
-              <p>Add your materials to turn them into presentation content.</p>
+              <h2>No presentations</h2>
               <button className="primary" onClick={() => open(fresh())}>
                 Create presentation <ArrowRight size={17} />
               </button>
@@ -388,7 +384,6 @@ function App() {
             </div>
           )}
           <div className="storage-caption">
-            <Check size={14} /> Project history is stored in this browser{" "}
             <button onClick={backup}>Download backup</button>
           </div>
         </main>
@@ -403,20 +398,14 @@ function App() {
               02 <b>Content</b>
             </span>
           </div>
-          <div className="eyebrow">FROM IDEA TO A CLEAR STORY</div>
           <h1>
             What is your
             <br />
             presentation about<span className="green-dot">?</span>
           </h1>
-          <p className="intro">
-            Tell us what you want to say and add your materials.
-            <br />
-            We will help you turn them into a clear structure.
-          </p>
           <div className="input-card">
             <label htmlFor="description">
-              Brief and context <span>Audience, purpose and topic</span>
+              Brief and context
             </label>
             <textarea
               id="description"
@@ -502,10 +491,6 @@ function App() {
               </button>
             </div>
           </div>
-          <p className="under-note">
-            You can edit the content in the next step. Your draft
-            is saved automatically.
-          </p>
           {error && (
             <div role="alert" className="alert">
               {error}
@@ -533,7 +518,7 @@ function App() {
             </div>
             <span className="saved">
               <Check size={14} />
-              {storageError ? "Not saved" : "Saved in this browser"}
+              {storageError ? "Not saved" : "Saved"}
             </span>
           </div>
           <div className="editor-grid">
@@ -636,11 +621,7 @@ function App() {
                     )}
                   </div>
                   <div className="slide-footer">
-                    <span>
-                      {slide.locked
-                        ? "TEXT LOCKED"
-                        : "CLICK TEXT TO EDIT"}
-                    </span>
+                    {slide.locked && <span>TEXT LOCKED</span>}
                     <span className="footer-mark">✳</span>
                   </div>
                 </article>
@@ -688,7 +669,6 @@ function App() {
                 </span>
                 <div>
                   <h2>Refine your content</h2>
-                  <p>Your message, the right delivery</p>
                 </div>
               </div>
               <div className="section-label">APPLY TO</div>
@@ -771,13 +751,6 @@ function App() {
                     }
                   />
                 </label>
-                <p>
-                  {someLocked
-                    ? allLocked
-                      ? "Text is locked. You can still edit manually and update charts."
-                      : "Some slides have locked text. Their wording will be preserved."
-                    : "Protect your wording from automatic rewriting."}
-                </p>
               </div>
               <button
                 className="primary apply"
@@ -787,11 +760,6 @@ function App() {
                 <Sparkles size={16} />
                 {busy ? "Updating content…" : "Apply changes"}
               </button>
-              <p className="settings-footnote">
-                Click to apply your settings.
-                <br />
-                You can undo the last generation.
-              </p>
             </aside>
           </div>
         </main>
