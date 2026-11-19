@@ -1,38 +1,69 @@
-# Развёртывание рядом со Screenshot AI
+# Деплой, как в Screenshot AI
 
-Целевой первый узел: `sai-api-a`, `128.140.108.182` (private `10.0.0.3`). Второй: `sai-api-b`, `128.140.108.247`. Отдельный Compose project `slides`, каталог `/opt/slides`, порт `8280`. Существующие Screenshot AI / Recipe порты и контейнеры не изменяются.
-
-## Статус
-
-Код и deploy-конфигурация подготовлены. Развёртывание и внешний доступ ещё не выполнены: в рабочей среде нет SSH-ключа и gitignored inventory Screenshot AI. Адрес `http://128.140.108.182:8280` — целевой, не подтверждённый production endpoint.
-
-## Подготовка на сервере
-
-Подключиться обычным SSH-доступом Screenshot AI. Убедиться, что 8280 свободен (`ss -ltn 'sport = :8280'`). Создать `/opt/slides/slides.env` с правами 600, используя `backend/.env.example`. Заполнить `OPENROUTER_API_KEY` и новый `SLIDES_API_TOKEN` (например, `openssl rand -hex 32`). Ключи не коммитить. Не копировать весь env другого сервиса.
-
-На Mac, где есть существующий Screenshot AI SSH inventory:
+Запускается с Mac, где уже настроен SSH Screenshot AI. Локальный Docker не нужен: образ собирается на сервере без эмуляции Apple Silicon.
 
 ```bash
 cd slides
-export SCREENSHOT_AI_HOSTS=../screenshot_ai/backend/deploy/hosts.json
-bash backend/deploy/deploy.sh
+bash scripts/deploy-prod.sh
 ```
 
-Скрипт использует inventory, ключ и пользователя Screenshot AI, переносит только закоммиченный backend, собирает отдельный контейнер и проверяет его health. Требуются Docker Compose v2+ и права на `/opt/slides` / Docker. По умолчанию один узел. Для второго `SLIDES_NODE=sai-api-b`.
+По умолчанию скрипт берёт `../screenshot_ai/backend/deploy/hosts.json`, пользователя и SSH-ключ из него и разворачивает Slides на `sai-api-a`. Если репозитории не лежат рядом:
+
+```bash
+bash scripts/deploy-prod.sh --hosts ~/Code/screenshot_ai/backend/deploy/hosts.json
+```
+
+## Что выполняется автоматически
+
+1. Проверяет inventory и путь к SSH-ключу.
+2. Читает OpenRouter key из локального `backend/deploy/slides.env`, переменной `OPENROUTER_API_KEY` или `../screenshot_ai/backend/deploy/config.prod.json` (`openrouter.api_keys[0]`). Если ключа нет, запрашивает скрытым вводом в терминале. Остальные секреты Screenshot AI не копирует.
+3. Генерирует отдельный `SLIDES_API_TOKEN`; сохраняет локальную конфигурацию с правами 600. При повторном запуске токен сохраняется.
+4. Упаковывает только разрешённые исходники backend. Загружает их и Slides env по SSH; локальные hosts/config и прочие секреты в архив не входят.
+5. Собирает образ на сервере до замены работающего контейнера. Хранит релизы в `/opt/slides/releases`, конфигурацию — `/opt/slides/slides.env`; ставит блокировку от параллельного деплоя.
+6. Запускает отдельный Compose project `slides`, публикует `0.0.0.0:8280`, проверяет локальный health и наличие ключа генерации. При неудачном запуске пытается восстановить предыдущий релиз и env.
+7. Проверяет публичный `http://IP:8280/healthz` с Mac. При недоступном порте завершает работу с ошибкой, а не сообщает об успешном деплое.
+8. После успешных проверок записывает IP и токен в `frontend/.env`, сохраняя остальные переменные. Для работы с обновлённой конфигурацией перезапустить Vite.
+
+Конфиг и токен не коммитятся. Сервер должен предоставлять Docker Compose v2 с `--wait`, Python 3, `flock` и права пользователя на Docker и `/opt/slides`. При зашифрованном SSH-ключе сначала загрузить его в macOS ssh-agent (`ssh-add`).
+
+## Параметры
+
+```bash
+# Проверка inventory без SSH и изменений
+bash scripts/deploy-prod.sh --check
+
+# Выбор узла, как --pod у Screenshot AI
+bash scripts/deploy-prod.sh --pod sai-api-b
+
+# Оба узла из inventory
+bash scripts/deploy-prod.sh --all
+
+# Своя конфигурация
+bash scripts/deploy-prod.sh --env /path/to/slides.env --screenshot-config /path/to/config.prod.json
+
+# Перезапустить существующий образ без пересборки
+bash scripts/deploy-prod.sh --skip-build
+```
+
+Поддерживаются также `SCREENSHOT_AI_HOSTS` и `SLIDES_NODE`. Старый entry point `bash backend/deploy/deploy.sh` работает с теми же параметрами. `--all` проверяет каждый узел, а локальный фронт направляет на первый узел; балансировщик пока не настраивается.
 
 ## Внешний порт
 
-В Hetzner Cloud Firewall, привязанном к выбранному API VM, добавить inbound TCP 8280 (для разработки можно ограничить домашним публичным IP). Проверить host firewall; при использовании Docker учитывать Docker forwarding: одного правила UFW недостаточно для ограничения опубликованного Docker-порта. Ограничение лучше задать в cloud firewall или DOCKER-USER chain. Не менять существующие правила 8080/8180/9090/9190.
+Первый узел: `sai-api-a`, `128.140.108.182` (private `10.0.0.3`). Второй: `sai-api-b`, `128.140.108.247`. Порт Slides — `8280`; Screenshot AI / Recipe контейнеры и порты не меняются.
 
-Compose публикует `0.0.0.0:8280`; cloud firewall должен пропустить трафик. Это не выполняется скриптом автоматически, поскольку доступ к Hetzner API не настроен.
+Docker-порт публикуется скриптом. Если VM защищена Hetzner Cloud Firewall, добавить inbound TCP 8280 для публичного IP своего Mac. Облачный firewall скрипт не меняет: у SSH inventory нет токена Hetzner API. Учитывать Docker forwarding при настройке host firewall; одного UFW может быть недостаточно для ограничения опубликованного порта.
 
-С локального Mac:
+HTTP по IP — временная схема без TLS. Для публичного запуска нужен HTTPS. Healthcheck проверяет конфигурацию и процесс, но не выполняет платный запрос к модели; реальную генерацию проверить через фронт.
+
+## Локальный фронт после деплоя
 
 ```bash
-curl --fail http://128.140.108.182:8280/healthz
+cd frontend
+npm ci
+npm run dev
 ```
 
-Проверить реальную генерацию через локальный фронт, а не только healthcheck. В `frontend/.env` указать серверный `SLIDES_API_TOKEN`. Он передаётся локальным Vite proxy, а не в браузерном bundle. HTTP по IP — временная схема: токен и материалы передаются до сервера без TLS. Для публичного запуска нужен HTTPS.
+Открыть http://localhost:5173. Адрес и токен уже записаны скриптом. Токен передаёт Vite proxy; он не попадает в браузерный bundle.
 
 ## Эксплуатация
 
@@ -41,5 +72,8 @@ docker compose -f /opt/slides/app/backend/deploy/compose.yml logs --tail=100 api
 docker compose -f /opt/slides/app/backend/deploy/compose.yml ps
 ```
 
-Перезапуск после изменения env: `docker compose -f /opt/slides/app/backend/deploy/compose.yml up -d --force-recreate --wait`.
-Контейнер ограничен 768 МБ / 1 CPU и работает без root. API закрыт bearer-токеном; максимум 3 одновременных вызова провайдера на процесс. Полноценные пользовательские аккаунты и billing пока не реализованы.
+Для ручных команд текущий образ уже указан в работающем контейнере; alias `slides-api:latest` обновляется после успешного локального healthcheck. Старые релизы и образы автоматически не удаляются, чтобы оставалась возможность отката.
+
+## Статус в этой среде
+
+Скрипт проверен локально с изолированными SSH/SCP-заглушками. Реальный SSH-деплой и внешний healthcheck здесь не выполнялись: inventory и SSH-ключ отсутствуют.

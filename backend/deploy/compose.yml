@@ -1,9 +1,10 @@
 name: slides
 services:
   api:
+    image: slides-api:${SLIDES_RELEASE:-latest}
     build: ..
     restart: unless-stopped
-    env_file: /opt/slides/slides.env
+    env_file: ${SLIDES_ENV_FILE:-/opt/slides/slides.env}
     ports:
       - "${SLIDES_BIND_IP:-0.0.0.0}:8280:8280"
     mem_limit: 768m

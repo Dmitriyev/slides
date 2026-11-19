@@ -2,12 +2,22 @@
 
 Генерация и доработка содержания презентаций. `frontend` — React + TypeScript + Vite; `backend` — FastAPI; `docs` — API и развёртывание.
 
+## Деплой одной командой
+
+С Mac с настроенным Screenshot AI:
+
+```bash
+bash scripts/deploy-prod.sh
+```
+
+Скрипт использует его inventory и ключ, собирает backend на сервере, создаёт Slides env и токен, проверяет API снаружи и настраивает `frontend/.env`. См. [развёртывание](docs/deployment.md).
+
 ## Локальный фронт → production API
 
 ```bash
 cd frontend
-cp .env.example .env
-# Укажите SLIDES_API_TOKEN (тот же, что на сервере).
+# После успешного deploy .env уже создан.
+# Для ручной настройки: cp .env.example .env и заполнить токен.
 npm ci
 npm run dev
 ```
