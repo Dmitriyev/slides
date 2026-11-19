@@ -44,7 +44,7 @@ uvicorn app.main:app --app-dir backend --port 8280
 ```bash
 cd frontend
 npm ci
-npm run build
+npm run test:history
 cd ..
 PYTHONPATH=backend pytest backend/tests -q
 ```
