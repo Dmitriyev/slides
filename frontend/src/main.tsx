@@ -273,7 +273,6 @@ function App() {
           </span>
           slide<span className="brand-light">tuner</span>
         </button>
-        <span className="top-label">СНАЧАЛА СМЫСЛ. ПОТОМ ФОРМА.</span>
         <button
           className="subtle"
           disabled={busy}
@@ -290,13 +289,11 @@ function App() {
       )}
       {!project ? (
         <main className="projects-page">
-          <div className="eyebrow">ВАШЕ РАБОЧЕЕ ПРОСТРАНСТВО</div>
           <div className="page-heading">
             <div>
               <h1>
                 Мои презентации<span className="green-dot">.</span>
               </h1>
-              <p>Возвращайтесь к идеям. Дорабатывайте в своём темпе.</p>
             </div>
             <button className="primary" onClick={() => open(fresh())}>
               <Plus size={18} /> Новый проект
@@ -307,8 +304,7 @@ function App() {
               <span className="empty-icon">
                 <FileText size={32} />
               </span>
-              <h2>Начнём с вашей идеи</h2>
-              <p>Добавьте материалы — соберём из них содержание презентации.</p>
+              <h2>Нет презентаций</h2>
               <button className="primary" onClick={() => open(fresh())}>
                 Создать презентацию <ArrowRight size={17} />
               </button>
@@ -388,7 +384,6 @@ function App() {
             </div>
           )}
           <div className="storage-caption">
-            <Check size={14} /> История хранится в этом браузере{" "}
             <button onClick={backup}>Скачать резервную копию</button>
           </div>
         </main>
@@ -403,20 +398,14 @@ function App() {
               02 <b>Содержание</b>
             </span>
           </div>
-          <div className="eyebrow">ОТ ИДЕИ К ЯСНОЙ ИСТОРИИ</div>
           <h1>
             О чём ваша
             <br />
             презентация<span className="green-dot">?</span>
           </h1>
-          <p className="intro">
-            Расскажите, что хотите донести, и добавьте материалы.
-            <br />
-            Мы поможем собрать из них понятную структуру.
-          </p>
           <div className="input-card">
             <label htmlFor="description">
-              Задача и контекст <span>Для кого, зачем и о чём</span>
+              Задача и контекст
             </label>
             <textarea
               id="description"
@@ -502,10 +491,6 @@ function App() {
               </button>
             </div>
           </div>
-          <p className="under-note">
-            Содержание можно будет изменить на следующем шаге. Черновик
-            сохраняется автоматически.
-          </p>
           {error && (
             <div role="alert" className="alert">
               {error}
@@ -533,7 +518,7 @@ function App() {
             </div>
             <span className="saved">
               <Check size={14} />
-              {storageError ? "Не сохранено" : "Сохранено в браузере"}
+              {storageError ? "Не сохранено" : "Сохранено"}
             </span>
           </div>
           <div className="editor-grid">
@@ -636,11 +621,7 @@ function App() {
                     )}
                   </div>
                   <div className="slide-footer">
-                    <span>
-                      {slide.locked
-                        ? "ТЕКСТ ЗАФИКСИРОВАН"
-                        : "НАЖМИТЕ НА ТЕКСТ, ЧТОБЫ ОТРЕДАКТИРОВАТЬ"}
-                    </span>
+                    {slide.locked && <span>ТЕКСТ ЗАФИКСИРОВАН</span>}
                     <span className="footer-mark">✳</span>
                   </div>
                 </article>
@@ -688,7 +669,6 @@ function App() {
                 </span>
                 <div>
                   <h2>Настроим содержание</h2>
-                  <p>Ваш смысл, нужная подача</p>
                 </div>
               </div>
               <div className="section-label">ПРИМЕНИТЬ К</div>
@@ -771,13 +751,6 @@ function App() {
                     }
                   />
                 </label>
-                <p>
-                  {someLocked
-                    ? allLocked
-                      ? "Текст зафиксирован. Графики и ручные правки доступны."
-                      : "Текст зафиксирован на части слайдов. Их формулировки сохранятся."
-                    : "Защитить формулировки от автоматической переработки."}
-                </p>
               </div>
               <button
                 className="primary apply"
@@ -787,11 +760,6 @@ function App() {
                 <Sparkles size={16} />
                 {busy ? "Обновляем содержание…" : "Применить изменения"}
               </button>
-              <p className="settings-footnote">
-                Настройки применяются по кнопке.
-                <br />
-                Предыдущую генерацию можно отменить.
-              </p>
             </aside>
           </div>
         </main>
