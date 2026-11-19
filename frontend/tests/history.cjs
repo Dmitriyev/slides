@@ -57,8 +57,8 @@ async function launch(saved) {
   return dom;
 }
 function button(dom, text) {
-  const b = [...dom.window.document.querySelectorAll("button")].find(
-    (x) => x.textContent.trim() === text,
+  const b = [...dom.window.document.querySelectorAll("button")].find((x) =>
+    x.textContent.replace(/\s+/g, " ").trim().includes(text),
   );
   assert.ok(b, `Button ${text} must exist`);
   return b;
@@ -80,12 +80,19 @@ async function input(dom, selector, value) {
 }
 (async () => {
   let dom = await launch();
-  await click(dom, "Новый проект");
+  assert.equal(dom.window.document.querySelector('input[type="number"]'), null);
+  assert.ok(dom.window.document.querySelector(".chat-pane"));
+  assert.ok(dom.window.document.querySelector(".upload-pane"));
   await input(dom, "#description", "A presentation draft");
   let saved = dom.window.localStorage.getItem(key);
   assert.equal(JSON.parse(saved)[0].description, "A presentation draft");
   dom.window.close();
   dom = await launch(saved);
+  assert.equal(
+    dom.window.document.querySelector("#description").value,
+    "A presentation draft",
+  );
+  await click(dom, "Мои проекты");
   assert.equal(dom.window.document.querySelectorAll(".project-card").length, 1);
   dom.window.document.querySelector(".project-open").click();
   await wait();
@@ -106,9 +113,6 @@ async function input(dom, selector, value) {
   saved = dom.window.localStorage.getItem(key);
   dom.window.close();
   dom = await launch(saved);
-  assert.equal(dom.window.document.querySelectorAll(".project-card").length, 1);
-  dom.window.document.querySelector(".project-open").click();
-  await wait();
   assert.equal(
     dom.window.document.querySelector(".slide-title").value,
     "Manual title",

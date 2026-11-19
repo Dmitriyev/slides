@@ -102,7 +102,7 @@ def configuration(path, screenshot_config, interactive):
     config['SLIDES_API_TOKEN'] = os.getenv('SLIDES_API_TOKEN') or config.get('SLIDES_API_TOKEN') or secrets.token_hex(32)
     if 'CHANGE_ME' in config['SLIDES_API_TOKEN'] or len(config['SLIDES_API_TOKEN']) < 24:
         raise ValueError('SLIDES_API_TOKEN must be at least 24 characters, without placeholders')
-    config['SLIDES_MODEL'] = config.get('SLIDES_MODEL') or 'google/gemini-2.5-flash'
+    config['SLIDES_MODEL'] = config.get('SLIDES_MODEL') or 'google/gemini-3.8-flash'
     config['CORS_ORIGINS'] = config.get('CORS_ORIGINS') or 'http://localhost:5173,http://127.0.0.1:5173'
     # Upload only Slides settings; do not copy unrelated application secrets.
     allowed = ('OPENROUTER_API_KEY', 'SLIDES_API_TOKEN', 'SLIDES_MODEL', 'CORS_ORIGINS')

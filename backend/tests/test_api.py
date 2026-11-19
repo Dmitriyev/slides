@@ -1,4 +1,5 @@
 import io
+import json
 from unittest.mock import AsyncMock
 import pytest
 from fastapi.testclient import TestClient
@@ -11,6 +12,12 @@ def client(monkeypatch):
 
 def content(title='Generated', count=1):
     return main.Content(title='Deck', slides=[main.Slide(title=title, paragraphs=['Changed text']) for _ in range(count)])
+
+def test_provider_schema_drops_limits_gemini_rejects():
+    schema = json.dumps(main.provider_schema(main.Content))
+    for limit in ("minimum", "maximum", "minLength", "maxLength", "minItems", "maxItems"):
+        assert f'"{limit}"' not in schema
+    assert "title" in schema and "slides" in schema
 
 def test_unauthorized():
     with TestClient(main.app) as c:

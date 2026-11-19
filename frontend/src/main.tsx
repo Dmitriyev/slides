@@ -16,6 +16,7 @@ import {
   Pencil,
   ChevronRight,
   Layers,
+  MessageSquare,
 } from "lucide-react";
 import "./style.css";
 
@@ -74,6 +75,7 @@ const controls: { key: keyof Settings; label: string; levels: string[] }[] = [
     levels: ["Только текст", "По смыслу", "Больше графиков"],
   },
 ];
+type ChatMessage = { role: "user" | "assistant"; text: string };
 const fresh = (): Project => ({
   id: crypto.randomUUID(),
   name: "Новая презентация",
@@ -132,16 +134,26 @@ async function api(path: string, body: FormData | object): Promise<Deck> {
   }
   return response.json();
 }
+function startProject(saved: Project[]): Project | null {
+  if (!saved.length) return fresh();
+  const latest = [...saved].sort((a, b) =>
+    b.updatedAt.localeCompare(a.updatedAt),
+  )[0];
+  return structuredClone(latest);
+}
 function App() {
   const initial = useRef(readProjects());
   const [projects, setProjects] = useState<Project[]>(initial.current.projects);
-  const [project, setProject] = useState<Project | null>(null);
+  const [project, setProject] = useState<Project | null>(() =>
+    initial.current.error ? null : startProject(initial.current.projects),
+  );
   const [files, setFiles] = useState<File[]>([]);
   const [scope, setScope] = useState<"slide" | "deck">("deck");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [storageError, setStorageError] = useState(initial.current.error);
   const [history, setHistory] = useState<Deck[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const deck = project?.deck;
@@ -199,6 +211,7 @@ function App() {
     setProject(structuredClone(p));
     setFiles([]);
     setHistory([]);
+    setMessages([]);
     setError("");
     setScope("deck");
   }
@@ -239,9 +252,20 @@ function App() {
         });
         setHistory((old) => [...old.slice(-9), structuredClone(deck)]);
       } else {
+        const prompt = project.description.trim();
+        setMessages((old) => [
+          ...old,
+          {
+            role: "user",
+            text:
+              prompt ||
+              files.map((f) => f.name).join(", ") ||
+              "Собери содержание по загруженным материалам",
+          },
+        ]);
         const data = new FormData();
         data.set("description", project.description);
-        data.set("slide_count", String(project.count));
+        data.set("slide_count", String(project.count || 6));
         data.set("settings", JSON.stringify(project.settings));
         files.forEach((f) => data.append("files", f));
         next = await api("generate", data);
@@ -252,9 +276,11 @@ function App() {
       });
       setFiles([]);
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : "Не удалось связаться с сервером",
-      );
+      const message =
+        e instanceof Error ? e.message : "Не удалось связаться с сервером";
+      setError(message);
+      if (!rewrite)
+        setMessages((old) => [...old, { role: "assistant", text: message }]);
     } finally {
       setBusy(false);
     }
@@ -393,124 +419,124 @@ function App() {
           </div>
         </main>
       ) : !deck ? (
-        <main className="create-page">
-          <div className="steps">
-            <span className="active">
-              01 <b>Материалы</b>
-            </span>
-            <div />
-            <span>
-              02 <b>Содержание</b>
-            </span>
-          </div>
-          <div className="eyebrow">ОТ ИДЕИ К ЯСНОЙ ИСТОРИИ</div>
-          <h1>
-            О чём ваша
-            <br />
-            презентация<span className="green-dot">?</span>
-          </h1>
-          <p className="intro">
-            Расскажите, что хотите донести, и добавьте материалы.
-            <br />
-            Мы поможем собрать из них понятную структуру.
-          </p>
-          <div className="input-card">
-            <label htmlFor="description">
-              Задача и контекст <span>Для кого, зачем и о чём</span>
-            </label>
-            <textarea
-              id="description"
-              maxLength={20000}
-              disabled={busy}
-              value={project.description}
-              onChange={(e) => patch({ description: e.target.value })}
-              placeholder="Например: презентация для команды о результатах квартала. Покажи главные изменения, объясни причины и предложи следующие шаги…"
-            />
-            <div
-              className="drop-zone"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (!busy) addFiles(Array.from(e.dataTransfer.files));
-              }}
-            >
-              <Upload size={23} />
-              <strong>Перетащите сюда материалы</strong>
-              <span>
-                или{" "}
-                <button
-                  disabled={busy}
-                  onClick={() => fileInput.current?.click()}
-                >
-                  выберите файлы
-                </button>
-              </span>
-              <small>PDF, DOCX, PPTX, TXT, MD, CSV · до 20 МБ</small>
-              <input
-                ref={fileInput}
-                type="file"
-                multiple
-                accept=".pdf,.docx,.pptx,.txt,.md,.csv"
-                hidden
-                onChange={(e) => {
-                  addFiles(Array.from(e.target.files || []));
-                  e.target.value = "";
+        <main className="workspace-page">
+          <div className="workspace">
+            <section className="input-card upload-pane">
+              <div className="section-label">МАТЕРИАЛЫ</div>
+              <div
+                className="drop-zone"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (!busy) addFiles(Array.from(e.dataTransfer.files));
                 }}
-              />
-            </div>
-            {files.map((f, i) => (
-              <div className="file-row" key={i}>
-                <FileText size={16} />
-                {f.name}
-                <small>{Math.ceil(f.size / 1024)} КБ</small>
-                <button
+              >
+                <Upload size={23} />
+                <strong>Перетащите сюда материалы</strong>
+                <span>
+                  или{" "}
+                  <button
+                    disabled={busy}
+                    onClick={() => fileInput.current?.click()}
+                  >
+                    выберите файлы
+                  </button>
+                </span>
+                <small>PDF, DOCX, PPTX, TXT, MD, CSV · до 20 МБ</small>
+                <input
+                  ref={fileInput}
+                  type="file"
+                  multiple
+                  accept=".pdf,.docx,.pptx,.txt,.md,.csv"
+                  hidden
+                  onChange={(e) => {
+                    addFiles(Array.from(e.target.files || []));
+                    e.target.value = "";
+                  }}
+                />
+              </div>
+              {files.map((f, i) => (
+                <div className="file-row" key={i}>
+                  <FileText size={16} />
+                  {f.name}
+                  <small>{Math.ceil(f.size / 1024)} КБ</small>
+                  <button
+                    disabled={busy}
+                    aria-label={"Убрать " + f.name}
+                    onClick={() =>
+                      setFiles((old) => old.filter((_, n) => n !== i))
+                    }
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              ))}
+            </section>
+            <section className="chat-pane">
+              <div className="settings-heading">
+                <span className="settings-icon">
+                  <MessageSquare size={18} />
+                </span>
+                <div>
+                  <h2>Чат</h2>
+                  <p>Опишите задачу своими словами</p>
+                </div>
+              </div>
+              <div className="chat-log">
+                {messages.length === 0 ? (
+                  <div className="chat-empty">
+                    <MessageSquare size={22} />
+                    <p>
+                      Напишите, для кого презентация и что нужно донести.
+                      Файлы можно добавить в материалы.
+                    </p>
+                  </div>
+                ) : (
+                  messages.map((m, i) => (
+                    <div className={"chat-bubble " + m.role} key={i}>
+                      {m.text}
+                    </div>
+                  ))
+                )}
+              </div>
+              {error && (
+                <div role="alert" className="alert">
+                  {error}
+                </div>
+              )}
+              <div className="chat-composer">
+                <label htmlFor="description">Задача и контекст</label>
+                <textarea
+                  id="description"
+                  maxLength={20000}
                   disabled={busy}
-                  aria-label={"Убрать " + f.name}
-                  onClick={() =>
-                    setFiles((old) => old.filter((_, n) => n !== i))
+                  value={project.description}
+                  onChange={(e) => patch({ description: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      if (
+                        !busy &&
+                        (files.length || project.description.trim())
+                      )
+                        run();
+                    }
+                  }}
+                  placeholder="Например: презентация для команды о результатах квартала. Покажи главные изменения, объясни причины и предложи следующие шаги…"
+                />
+                <button
+                  className="primary"
+                  disabled={
+                    busy || (!files.length && !project.description.trim())
                   }
+                  onClick={() => run()}
                 >
-                  <X size={16} />
+                  {busy ? "Собираем содержание…" : "Создать содержание"}
+                  {!busy && <ArrowRight size={18} />}
                 </button>
               </div>
-            ))}
-            <div className="create-bottom">
-              <label>
-                Количество слайдов{" "}
-                <input
-                  disabled={busy}
-                  type="number"
-                  min="1"
-                  max="20"
-                  value={project.count}
-                  onChange={(e) =>
-                    patch({
-                      count: Math.max(1, Math.min(20, Number(e.target.value))),
-                    })
-                  }
-                />
-              </label>
-              <button
-                className="primary"
-                disabled={
-                  busy || (!files.length && !project.description.trim())
-                }
-                onClick={() => run()}
-              >
-                {busy ? "Собираем содержание…" : "Создать содержание"}
-                {!busy && <ArrowRight size={18} />}
-              </button>
-            </div>
+            </section>
           </div>
-          <p className="under-note">
-            Содержание можно будет изменить на следующем шаге. Черновик
-            сохраняется автоматически.
-          </p>
-          {error && (
-            <div role="alert" className="alert">
-              {error}
-            </div>
-          )}
         </main>
       ) : (
         <main className="editor">

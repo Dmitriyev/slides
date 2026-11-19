@@ -121,6 +121,19 @@ tone=разговорный/нейтральный/официальный; chart
 paragraphs — массив законченных коротких абзацев. Не используй markdown.
 """
 
+# Gemini rejects response schemas whose length and numeric bounds explode the
+# constraint automaton. Pydantic still enforces those limits after the reply.
+SCHEMA_LIMITS = {"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "minLength", "maxLength", "minItems", "maxItems", "pattern"}
+
+def provider_schema(model: type[BaseModel]) -> dict:
+    def loosen(node):
+        if isinstance(node, dict):
+            return {key: loosen(value) for key, value in node.items() if key not in SCHEMA_LIMITS}
+        if isinstance(node, list):
+            return [loosen(item) for item in node]
+        return node
+    return loosen(model.model_json_schema())
+
 async def generate(payload: dict) -> Content:
     key = os.getenv("OPENROUTER_API_KEY")
     if not key:
@@ -129,9 +142,9 @@ async def generate(payload: dict) -> Content:
         async with slots:
             async with httpx.AsyncClient(timeout=110) as client:
                 response = await client.post("https://openrouter.ai/api/v1/chat/completions", headers={"Authorization": f"Bearer {key}"}, json={
-                    "model": os.getenv("SLIDES_MODEL", "google/gemini-2.5-flash"),
+                    "model": os.getenv("SLIDES_MODEL", "google/gemini-3.8-flash"),
                     "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
-                    "response_format": {"type": "json_schema", "json_schema": {"name": "presentation", "strict": True, "schema": Content.model_json_schema()}},
+                    "response_format": {"type": "json_schema", "json_schema": {"name": "presentation", "strict": True, "schema": provider_schema(Content)}},
                     "max_tokens": 14000,
                 })
                 response.raise_for_status()
