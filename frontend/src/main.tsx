@@ -139,6 +139,11 @@ function App() {
   const [files, setFiles] = useState<File[]>([]);
   const [scope, setScope] = useState<"slide" | "deck">("deck");
   const [busy, setBusy] = useState(false);
+  const [pendingRewrite, setPendingRewrite] = useState<{
+    projectId: string;
+    scope: "slide" | "deck";
+    slideId?: string;
+  } | null>(null);
   const [error, setError] = useState("");
   const [storageError, setStorageError] = useState(initial.current.error);
   const [history, setHistory] = useState<Deck[]>([]);
@@ -166,6 +171,26 @@ function App() {
       );
     }
   }, [projects]);
+
+  // Only slider input schedules a rewrite, never navigation or generated content.
+  useEffect(() => {
+    if (!pendingRewrite) return;
+    if (
+      !deck || !project ||
+      pendingRewrite.projectId !== project.id ||
+      pendingRewrite.scope !== scope ||
+      pendingRewrite.slideId !== slide?.id
+    ) {
+      setPendingRewrite(null);
+      return;
+    }
+    if (busy) return;
+    const timer = window.setTimeout(() => {
+      setPendingRewrite(null);
+      void run(true);
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [pendingRewrite, project, scope, busy]);
 
   function patch(change: Partial<Project>) {
     setProject(
@@ -226,6 +251,7 @@ function App() {
   }
   async function run(rewrite = false) {
     if (!project || busy) return;
+    setPendingRewrite(null);
     setBusy(true);
     setError("");
     try {
@@ -711,14 +737,19 @@ function App() {
                     max="2"
                     step="1"
                     value={project.settings[c.key]}
-                    onChange={(e) =>
+                    onChange={(e) => {
                       patch({
                         settings: {
                           ...project.settings,
                           [c.key]: Number(e.target.value),
                         },
-                      })
-                    }
+                      });
+                      setPendingRewrite({
+                        projectId: project.id,
+                        scope,
+                        slideId: slide?.id,
+                      });
+                    }}
                   />
                   <div className="range-labels">
                     <span>{c.levels[0]}</span>
@@ -760,6 +791,11 @@ function App() {
                 <Sparkles size={16} />
                 {busy ? "Обновляем содержание…" : "Применить изменения"}
               </button>
+              <p className="settings-footnote">
+                Настройки применяются автоматически после изменения ползунков.
+                <br />
+                Предыдущую генерацию можно отменить.
+              </p>
             </aside>
           </div>
         </main>
