@@ -34,6 +34,7 @@ const result = {
   ],
 };
 let rewriteRequest;
+let rewriteCount = 0;
 async function launch(saved) {
   const dom = new JSDOM(
     '<html><head></head><body><div id="root"></div></body></html>',
@@ -47,6 +48,7 @@ async function launch(saved) {
   if (saved) dom.window.localStorage.setItem(key, saved);
   dom.window.fetch = async (url, options) => {
     if (url.endsWith("rewrite")) {
+      rewriteCount++;
       rewriteRequest = JSON.parse(options.body);
       return { ok: true, json: async () => rewriteRequest.deck };
     }
@@ -94,6 +96,35 @@ async function input(dom, selector, value) {
     "A presentation draft",
   );
   await click(dom, "Создать содержание");
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  assert.equal(rewriteCount, 0, "Initial generation must not cause a rewrite");
+  await input(dom, "#detail", "2");
+  await input(dom, "#tone", "2");
+  await input(dom, "#charts", "0");
+  assert.equal(rewriteCount, 0, "Slider changes should be debounced");
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  assert.equal(rewriteCount, 1, "Rapid slider changes produce one request");
+  assert.equal(rewriteRequest.scope, "deck");
+  assert.equal(rewriteRequest.settings.detail, 2);
+  assert.equal(rewriteRequest.settings.tone, 2);
+  assert.equal(rewriteRequest.settings.charts, 0);
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  assert.equal(rewriteCount, 1, "Response must not trigger another rewrite");
+  await click(dom, "Этому слайду");
+  await input(dom, "#complexity", "0");
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  assert.equal(rewriteCount, 2);
+  assert.equal(rewriteRequest.scope, "slide");
+  assert.equal(rewriteRequest.slide_id, "one");
+  await input(dom, "#detail", "0");
+  await click(dom, "Следующий");
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  assert.equal(rewriteCount, 2, "Navigation must cancel pending generation");
+  await click(dom, "Предыдущий");
+  await input(dom, "#detail", "2");
+  await click(dom, "Всей презентации");
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  assert.equal(rewriteCount, 2, "Scope changes must cancel pending generation");
   await input(dom, ".slide-title", "Manual title");
   dom.window.document.querySelector('input[type="checkbox"]').click();
   await wait();
@@ -123,7 +154,7 @@ async function input(dom, selector, value) {
   assert.equal(JSON.parse(dom.window.localStorage.getItem(key)).length, 2);
   dom.window.close();
   console.log(
-    "PASS: draft autosave, project history, reopen after reload, manual text, lock, rewrite scope, no duplicate projects",
+    "PASS: draft autosave, project history, reopen after reload, manual text, lock, rewrite scope, automatic debounced rewrite, navigation cancellation, no duplicate projects",
   );
 })().catch((error) => {
   console.error(error);
