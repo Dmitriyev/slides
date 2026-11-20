@@ -1,6 +1,6 @@
 # API v1
 
-`GET /healthz` — статус процесса и наличие ключа генерации. Swagger: `/docs`.
+`GET /healthz` — статус процесса и наличие ключа генерации.
 Все POST требуют `Authorization: Bearer <SLIDES_API_TOKEN>`. При работе локального фронта заголовок добавляет Vite proxy.
 
 ## POST /api/v1/presentations/generate

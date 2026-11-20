@@ -1,0 +1,798 @@
+{
+  "content": {
+    "$defs": {
+      "Chart": {
+        "properties": {
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/$defs/Datum"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "title",
+          "unit",
+          "data"
+        ],
+        "title": "Chart",
+        "type": "object"
+      },
+      "Datum": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          },
+          "evidence": {
+            "title": "Evidence",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value",
+          "evidence"
+        ],
+        "title": "Datum",
+        "type": "object"
+      },
+      "Settings": {
+        "properties": {
+          "detail": {
+            "default": 1,
+            "title": "Detail",
+            "type": "integer"
+          },
+          "complexity": {
+            "default": 1,
+            "title": "Complexity",
+            "type": "integer"
+          },
+          "tone": {
+            "default": 1,
+            "title": "Tone",
+            "type": "integer"
+          },
+          "charts": {
+            "default": 1,
+            "title": "Charts",
+            "type": "integer"
+          }
+        },
+        "title": "Settings",
+        "type": "object"
+      },
+      "Slide": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "paragraphs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Paragraphs",
+            "type": "array"
+          },
+          "chart": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Chart"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "locked": {
+            "default": false,
+            "title": "Locked",
+            "type": "boolean"
+          },
+          "settings": {
+            "$ref": "#/$defs/Settings"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "Slide",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "title": {
+        "title": "Title",
+        "type": "string"
+      },
+      "slides": {
+        "items": {
+          "$ref": "#/$defs/Slide"
+        },
+        "title": "Slides",
+        "type": "array"
+      }
+    },
+    "required": [
+      "title",
+      "slides"
+    ],
+    "title": "Content",
+    "type": "object"
+  },
+  "chat": {
+    "$defs": {
+      "Chart": {
+        "properties": {
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/$defs/Datum"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "title",
+          "unit",
+          "data"
+        ],
+        "title": "Chart",
+        "type": "object"
+      },
+      "Content": {
+        "properties": {
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "slides": {
+            "items": {
+              "$ref": "#/$defs/Slide"
+            },
+            "title": "Slides",
+            "type": "array"
+          }
+        },
+        "required": [
+          "title",
+          "slides"
+        ],
+        "title": "Content",
+        "type": "object"
+      },
+      "Datum": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          },
+          "evidence": {
+            "title": "Evidence",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value",
+          "evidence"
+        ],
+        "title": "Datum",
+        "type": "object"
+      },
+      "Settings": {
+        "properties": {
+          "detail": {
+            "default": 1,
+            "title": "Detail",
+            "type": "integer"
+          },
+          "complexity": {
+            "default": 1,
+            "title": "Complexity",
+            "type": "integer"
+          },
+          "tone": {
+            "default": 1,
+            "title": "Tone",
+            "type": "integer"
+          },
+          "charts": {
+            "default": 1,
+            "title": "Charts",
+            "type": "integer"
+          }
+        },
+        "title": "Settings",
+        "type": "object"
+      },
+      "Slide": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "paragraphs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Paragraphs",
+            "type": "array"
+          },
+          "chart": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Chart"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "locked": {
+            "default": false,
+            "title": "Locked",
+            "type": "boolean"
+          },
+          "settings": {
+            "$ref": "#/$defs/Settings"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "Slide",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "message": {
+        "title": "Message",
+        "type": "string"
+      },
+      "content": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Content"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    },
+    "required": [
+      "message"
+    ],
+    "title": "ChatAnswer",
+    "type": "object"
+  },
+  "rewrite": {
+    "$defs": {
+      "Chart": {
+        "properties": {
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/$defs/Datum"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "title",
+          "unit",
+          "data"
+        ],
+        "title": "Chart",
+        "type": "object"
+      },
+      "Datum": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          },
+          "evidence": {
+            "title": "Evidence",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value",
+          "evidence"
+        ],
+        "title": "Datum",
+        "type": "object"
+      },
+      "Deck": {
+        "properties": {
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "slides": {
+            "items": {
+              "$ref": "#/$defs/Slide"
+            },
+            "title": "Slides",
+            "type": "array"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "slides",
+          "source"
+        ],
+        "title": "Deck",
+        "type": "object"
+      },
+      "Settings": {
+        "properties": {
+          "detail": {
+            "default": 1,
+            "title": "Detail",
+            "type": "integer"
+          },
+          "complexity": {
+            "default": 1,
+            "title": "Complexity",
+            "type": "integer"
+          },
+          "tone": {
+            "default": 1,
+            "title": "Tone",
+            "type": "integer"
+          },
+          "charts": {
+            "default": 1,
+            "title": "Charts",
+            "type": "integer"
+          }
+        },
+        "title": "Settings",
+        "type": "object"
+      },
+      "Slide": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "paragraphs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Paragraphs",
+            "type": "array"
+          },
+          "chart": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Chart"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "locked": {
+            "default": false,
+            "title": "Locked",
+            "type": "boolean"
+          },
+          "settings": {
+            "$ref": "#/$defs/Settings"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "Slide",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "deck": {
+        "$ref": "#/$defs/Deck"
+      },
+      "scope": {
+        "enum": [
+          "slide",
+          "deck"
+        ],
+        "title": "Scope",
+        "type": "string"
+      },
+      "slide_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Slide Id"
+      },
+      "settings": {
+        "$ref": "#/$defs/Settings"
+      }
+    },
+    "required": [
+      "deck",
+      "scope",
+      "settings"
+    ],
+    "title": "Rewrite",
+    "type": "object"
+  },
+  "chat_request": {
+    "$defs": {
+      "Alternative": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "slide",
+              "deck"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "slide_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Slide Id"
+          },
+          "settings": {
+            "$ref": "#/$defs/Settings"
+          },
+          "content": {
+            "$ref": "#/$defs/Content"
+          }
+        },
+        "required": [
+          "key",
+          "scope",
+          "settings",
+          "content"
+        ],
+        "title": "Alternative",
+        "type": "object"
+      },
+      "Chart": {
+        "properties": {
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/$defs/Datum"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "title",
+          "unit",
+          "data"
+        ],
+        "title": "Chart",
+        "type": "object"
+      },
+      "ChatMessage": {
+        "properties": {
+          "role": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "text"
+        ],
+        "title": "ChatMessage",
+        "type": "object"
+      },
+      "Content": {
+        "properties": {
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "slides": {
+            "items": {
+              "$ref": "#/$defs/Slide"
+            },
+            "title": "Slides",
+            "type": "array"
+          }
+        },
+        "required": [
+          "title",
+          "slides"
+        ],
+        "title": "Content",
+        "type": "object"
+      },
+      "Datum": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          },
+          "evidence": {
+            "title": "Evidence",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value",
+          "evidence"
+        ],
+        "title": "Datum",
+        "type": "object"
+      },
+      "Deck": {
+        "properties": {
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "slides": {
+            "items": {
+              "$ref": "#/$defs/Slide"
+            },
+            "title": "Slides",
+            "type": "array"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "slides",
+          "source"
+        ],
+        "title": "Deck",
+        "type": "object"
+      },
+      "Settings": {
+        "properties": {
+          "detail": {
+            "default": 1,
+            "title": "Detail",
+            "type": "integer"
+          },
+          "complexity": {
+            "default": 1,
+            "title": "Complexity",
+            "type": "integer"
+          },
+          "tone": {
+            "default": 1,
+            "title": "Tone",
+            "type": "integer"
+          },
+          "charts": {
+            "default": 1,
+            "title": "Charts",
+            "type": "integer"
+          }
+        },
+        "title": "Settings",
+        "type": "object"
+      },
+      "Slide": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "paragraphs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Paragraphs",
+            "type": "array"
+          },
+          "chart": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Chart"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "locked": {
+            "default": false,
+            "title": "Locked",
+            "type": "boolean"
+          },
+          "settings": {
+            "$ref": "#/$defs/Settings"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "Slide",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "deck": {
+        "$ref": "#/$defs/Deck"
+      },
+      "scope": {
+        "enum": [
+          "slide",
+          "deck"
+        ],
+        "title": "Scope",
+        "type": "string"
+      },
+      "slide_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Slide Id"
+      },
+      "settings": {
+        "$ref": "#/$defs/Settings"
+      },
+      "message": {
+        "title": "Message",
+        "type": "string"
+      },
+      "messages": {
+        "items": {
+          "$ref": "#/$defs/ChatMessage"
+        },
+        "title": "Messages",
+        "type": "array"
+      },
+      "alternatives": {
+        "items": {
+          "$ref": "#/$defs/Alternative"
+        },
+        "title": "Alternatives",
+        "type": "array"
+      }
+    },
+    "required": [
+      "deck",
+      "scope",
+      "settings",
+      "message"
+    ],
+    "title": "ChatRequest",
+    "type": "object"
+  }
+}
