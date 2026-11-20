@@ -56,29 +56,29 @@ const STORAGE = "slide-tuner.projects.v1";
 const controls: { key: keyof Settings; label: string; levels: string[] }[] = [
   {
     key: "detail",
-    label: "Подробность",
-    levels: ["Кратко", "Сбалансированно", "Подробно"],
+    label: "Level of detail",
+    levels: ["Brief", "Balanced", "Detailed"],
   },
   {
     key: "complexity",
-    label: "Сложность языка",
-    levels: ["Простой", "Деловой", "Экспертный"],
+    label: "Language complexity",
+    levels: ["Simple", "Business", "Expert"],
   },
   {
     key: "tone",
-    label: "Тон",
-    levels: ["Разговорный", "Нейтральный", "Официальный"],
+    label: "Tone",
+    levels: ["Conversational", "Neutral", "Formal"],
   },
   {
     key: "charts",
-    label: "Графики и диаграммы",
-    levels: ["Только текст", "По смыслу", "Больше графиков"],
+    label: "Charts and diagrams",
+    levels: ["Text only", "When relevant", "More charts"],
   },
 ];
 type ChatMessage = { role: "user" | "assistant"; text: string };
 const fresh = (): Project => ({
   id: crypto.randomUUID(),
-  name: "Новая презентация",
+  name: "New presentation",
   updatedAt: new Date().toISOString(),
   description: "",
   count: 6,
@@ -108,7 +108,7 @@ function readProjects(): { projects: Project[]; error: string } {
     return {
       projects: [],
       error:
-        "Не удалось прочитать историю. Данные в хранилище не перезаписаны. Скачайте резервную копию перед продолжением.",
+        "Could not load project history. Your stored data has not been overwritten. Download a backup before continuing.",
     };
   }
 }
@@ -120,13 +120,13 @@ async function api(path: string, body: FormData | object): Promise<Deck> {
     body: body instanceof FormData ? body : JSON.stringify(body),
   });
   if (!response.ok) {
-    let message = `Ошибка API (${response.status})`;
+    let message = `API error (${response.status})`;
     try {
       const data = await response.json();
       message =
         typeof data.detail === "string"
           ? data.detail
-          : "Проверьте параметры и повторите запрос";
+          : "Check your settings and try again";
     } catch {
       /* proxy can return non-JSON */
     }
@@ -150,6 +150,11 @@ function App() {
   const [files, setFiles] = useState<File[]>([]);
   const [scope, setScope] = useState<"slide" | "deck">("deck");
   const [busy, setBusy] = useState(false);
+  const [pendingRewrite, setPendingRewrite] = useState<{
+    projectId: string;
+    scope: "slide" | "deck";
+    slideId?: string;
+  } | null>(null);
   const [error, setError] = useState("");
   const [storageError, setStorageError] = useState(initial.current.error);
   const [history, setHistory] = useState<Deck[]>([]);
@@ -174,10 +179,30 @@ function App() {
       setStorageError("");
     } catch {
       setStorageError(
-        "Не удалось сохранить изменения: localStorage недоступен или заполнен. Скачайте резервную копию.",
+        "Could not save changes: browser storage is unavailable or full. Download a backup.",
       );
     }
   }, [projects]);
+
+  // Only slider input schedules a rewrite, never navigation or generated content.
+  useEffect(() => {
+    if (!pendingRewrite) return;
+    if (
+      !deck || !project ||
+      pendingRewrite.projectId !== project.id ||
+      pendingRewrite.scope !== scope ||
+      pendingRewrite.slideId !== slide?.id
+    ) {
+      setPendingRewrite(null);
+      return;
+    }
+    if (busy) return;
+    const timer = window.setTimeout(() => {
+      setPendingRewrite(null);
+      void run(true);
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [pendingRewrite, project, scope, busy]);
 
   function patch(change: Partial<Project>) {
     setProject(
@@ -231,7 +256,7 @@ function App() {
       files.length + incoming.length > 8 ||
       [...files, ...incoming].reduce((n, f) => n + f.size, 0) > 20 * 1024 * 1024
     ) {
-      setError("Не больше 8 файлов, общий размер до 20 МБ");
+      setError("Up to 8 files, 20 MB total");
       return;
     }
     setFiles((old) => [...old, ...incoming]);
@@ -239,6 +264,7 @@ function App() {
   }
   async function run(rewrite = false) {
     if (!project || busy) return;
+    setPendingRewrite(null);
     setBusy(true);
     setError("");
     try {
@@ -260,7 +286,7 @@ function App() {
             text:
               prompt ||
               files.map((f) => f.name).join(", ") ||
-              "Собери содержание по загруженным материалам",
+              "Build the content from the uploaded materials",
           },
         ]);
         const data = new FormData();
@@ -272,12 +298,12 @@ function App() {
       }
       patch({
         deck: next,
-        name: project.name === "Новая презентация" ? next.title : project.name,
+        name: project.name === "New presentation" ? next.title : project.name,
       });
       setFiles([]);
     } catch (e) {
       const message =
-        e instanceof Error ? e.message : "Не удалось связаться с сервером";
+        e instanceof Error ? e.message : "Could not connect to the server";
       setError(message);
       if (!rewrite)
         setMessages((old) => [...old, { role: "assistant", text: message }]);
@@ -299,33 +325,30 @@ function App() {
           </span>
           slide<span className="brand-light">tuner</span>
         </button>
-        <span className="top-label">СНАЧАЛА СМЫСЛ. ПОТОМ ФОРМА.</span>
         <button
           className="subtle"
           disabled={busy}
           onClick={() => setProject(null)}
         >
-          <FolderOpen size={16} /> Мои проекты{" "}
+          <FolderOpen size={16} /> My projects{" "}
           <span className="badge">{projects.length}</span>
         </button>
       </header>
       {storageError && (
         <div className="alert" role="alert">
-          {storageError} <button onClick={backup}>Скачать копию</button>
+          {storageError} <button onClick={backup}>Download backup</button>
         </div>
       )}
       {!project ? (
         <main className="projects-page">
-          <div className="eyebrow">ВАШЕ РАБОЧЕЕ ПРОСТРАНСТВО</div>
           <div className="page-heading">
             <div>
               <h1>
-                Мои презентации<span className="green-dot">.</span>
+                My presentations<span className="green-dot">.</span>
               </h1>
-              <p>Возвращайтесь к идеям. Дорабатывайте в своём темпе.</p>
             </div>
             <button className="primary" onClick={() => open(fresh())}>
-              <Plus size={18} /> Новый проект
+              <Plus size={18} /> New project
             </button>
           </div>
           {!projects.length ? (
@@ -333,10 +356,9 @@ function App() {
               <span className="empty-icon">
                 <FileText size={32} />
               </span>
-              <h2>Начнём с вашей идеи</h2>
-              <p>Добавьте материалы — соберём из них содержание презентации.</p>
+              <h2>No presentations</h2>
               <button className="primary" onClick={() => open(fresh())}>
-                Создать презентацию <ArrowRight size={17} />
+                Create presentation <ArrowRight size={17} />
               </button>
             </div>
           ) : (
@@ -349,15 +371,15 @@ function App() {
                         SLIDE TUNER /{" "}
                         {p.deck
                           ? String(p.deck.slides.length).padStart(2, "0") +
-                            " СЛАЙДОВ"
-                          : "ЧЕРНОВИК"}
+                            " SLIDES"
+                          : "DRAFT"}
                       </span>
                       <h2>{p.deck?.slides[0]?.title || p.name}</h2>
                       <div className="cover-line" />
                     </div>
                     <h3>{p.name}</h3>
                     <p>
-                      {new Date(p.updatedAt).toLocaleString("ru-RU", {
+                      {new Date(p.updatedAt).toLocaleString("en-US", {
                         dateStyle: "medium",
                         timeStyle: "short",
                       })}{" "}
@@ -368,7 +390,7 @@ function App() {
                     <button
                       className="subtle"
                       onClick={() => {
-                        const name = prompt("Название проекта", p.name);
+                        const name = prompt("Project name", p.name);
                         if (name?.trim())
                           setProjects((old) =>
                             old.map((item) =>
@@ -383,11 +405,11 @@ function App() {
                           );
                       }}
                     >
-                      <Pencil size={14} /> Переименовать
+                      <Pencil size={14} /> Rename
                     </button>
                     <button
                       className="icon-button"
-                      aria-label={"Удалить " + p.name}
+                      aria-label={"Delete " + p.name}
                       onClick={() => setDeleteId(p.id)}
                     >
                       <Trash2 size={15} />
@@ -395,7 +417,7 @@ function App() {
                   </div>
                   {deleteId === p.id && (
                     <div className="delete-confirm">
-                      Удалить проект?
+                      Delete project?
                       <button
                         onClick={() => {
                           setProjects((old) =>
@@ -404,9 +426,9 @@ function App() {
                           setDeleteId(null);
                         }}
                       >
-                        Удалить
+                        Delete
                       </button>
-                      <button onClick={() => setDeleteId(null)}>Отмена</button>
+                      <button onClick={() => setDeleteId(null)}>Cancel</button>
                     </div>
                   )}
                 </article>
@@ -414,15 +436,14 @@ function App() {
             </div>
           )}
           <div className="storage-caption">
-            <Check size={14} /> История хранится в этом браузере{" "}
-            <button onClick={backup}>Скачать резервную копию</button>
+            <button onClick={backup}>Download backup</button>
           </div>
         </main>
       ) : !deck ? (
         <main className="workspace-page">
           <div className="workspace">
             <section className="input-card upload-pane">
-              <div className="section-label">МАТЕРИАЛЫ</div>
+              <div className="section-label">MATERIALS</div>
               <div
                 className="drop-zone"
                 onDragOver={(e) => e.preventDefault()}
@@ -432,17 +453,17 @@ function App() {
                 }}
               >
                 <Upload size={23} />
-                <strong>Перетащите сюда материалы</strong>
+                <strong>Drop your materials here</strong>
                 <span>
-                  или{" "}
+                  or{" "}
                   <button
                     disabled={busy}
                     onClick={() => fileInput.current?.click()}
                   >
-                    выберите файлы
+                    choose files
                   </button>
                 </span>
-                <small>PDF, DOCX, PPTX, TXT, MD, CSV · до 20 МБ</small>
+                <small>PDF, DOCX, PPTX, TXT, MD, CSV · up to 20 MB</small>
                 <input
                   ref={fileInput}
                   type="file"
@@ -459,10 +480,10 @@ function App() {
                 <div className="file-row" key={i}>
                   <FileText size={16} />
                   {f.name}
-                  <small>{Math.ceil(f.size / 1024)} КБ</small>
+                  <small>{Math.ceil(f.size / 1024)} KB</small>
                   <button
                     disabled={busy}
-                    aria-label={"Убрать " + f.name}
+                    aria-label={"Remove " + f.name}
                     onClick={() =>
                       setFiles((old) => old.filter((_, n) => n !== i))
                     }
@@ -478,26 +499,15 @@ function App() {
                   <MessageSquare size={18} />
                 </span>
                 <div>
-                  <h2>Чат</h2>
-                  <p>Опишите задачу своими словами</p>
+                  <h2>Chat</h2>
                 </div>
               </div>
               <div className="chat-log">
-                {messages.length === 0 ? (
-                  <div className="chat-empty">
-                    <MessageSquare size={22} />
-                    <p>
-                      Напишите, для кого презентация и что нужно донести.
-                      Файлы можно добавить в материалы.
-                    </p>
+                {messages.map((m, i) => (
+                  <div className={"chat-bubble " + m.role} key={i}>
+                    {m.text}
                   </div>
-                ) : (
-                  messages.map((m, i) => (
-                    <div className={"chat-bubble " + m.role} key={i}>
-                      {m.text}
-                    </div>
-                  ))
-                )}
+                ))}
               </div>
               {error && (
                 <div role="alert" className="alert">
@@ -505,7 +515,7 @@ function App() {
                 </div>
               )}
               <div className="chat-composer">
-                <label htmlFor="description">Задача и контекст</label>
+                <label htmlFor="description">Brief and context</label>
                 <textarea
                   id="description"
                   maxLength={20000}
@@ -522,7 +532,7 @@ function App() {
                         run();
                     }
                   }}
-                  placeholder="Например: презентация для команды о результатах квартала. Покажи главные изменения, объясни причины и предложи следующие шаги…"
+                  placeholder="For example: a presentation for the team about quarterly results. Highlight the key changes, explain the reasons and suggest next steps…"
                 />
                 <button
                   className="primary"
@@ -531,7 +541,7 @@ function App() {
                   }
                   onClick={() => run()}
                 >
-                  {busy ? "Собираем содержание…" : "Создать содержание"}
+                  {busy ? "Generating content…" : "Generate content"}
                   {!busy && <ArrowRight size={18} />}
                 </button>
               </div>
@@ -547,11 +557,11 @@ function App() {
                 className="back"
                 onClick={() => setProject(null)}
               >
-                <ArrowLeft size={15} /> Все проекты
+                <ArrowLeft size={15} /> All projects
               </button>
               <input
                 className="project-name"
-                aria-label="Название проекта"
+                aria-label="Project name"
                 disabled={busy}
                 value={project.name}
                 onChange={(e) => patch({ name: e.target.value })}
@@ -559,13 +569,13 @@ function App() {
             </div>
             <span className="saved">
               <Check size={14} />
-              {storageError ? "Не сохранено" : "Сохранено в браузере"}
+              {storageError ? "Not saved" : "Saved"}
             </span>
           </div>
           <div className="editor-grid">
             <aside className="filmstrip">
               <div className="section-label">
-                СЛАЙДЫ <span>{deck.slides.length}</span>
+                SLIDES <span>{deck.slides.length}</span>
               </div>
               {deck.slides.map((s, i) => (
                 <button
@@ -595,7 +605,7 @@ function App() {
             <section className="canvas-area">
               <div className="canvas-toolbar">
                 <span>
-                  СОДЕРЖАНИЕ <span className="separator">/</span> СЛАЙД{" "}
+                  CONTENT <span className="separator">/</span> SLIDE{" "}
                   {(project.selected || 0) + 1}
                 </span>
                 <button
@@ -606,7 +616,7 @@ function App() {
                     setHistory((old) => old.slice(0, -1));
                   }}
                 >
-                  <Undo2 size={15} /> Отменить генерацию
+                  <Undo2 size={15} /> Undo generation
                 </button>
               </div>
               {slide && (
@@ -620,7 +630,7 @@ function App() {
                   </div>
                   <textarea
                     className="slide-title"
-                    aria-label="Заголовок слайда"
+                    aria-label="Slide title"
                     disabled={busy}
                     value={slide.title}
                     onChange={(e) => changeSlide({ title: e.target.value })}
@@ -629,7 +639,7 @@ function App() {
                     {slide.paragraphs.map((p, i) => (
                       <textarea
                         key={i}
-                        aria-label={"Абзац " + (i + 1)}
+                        aria-label={"Paragraph " + (i + 1)}
                         disabled={busy}
                         value={p}
                         onChange={(e) =>
@@ -662,11 +672,7 @@ function App() {
                     )}
                   </div>
                   <div className="slide-footer">
-                    <span>
-                      {slide.locked
-                        ? "ТЕКСТ ЗАФИКСИРОВАН"
-                        : "НАЖМИТЕ НА ТЕКСТ, ЧТОБЫ ОТРЕДАКТИРОВАТЬ"}
-                    </span>
+                    {slide.locked && <span>TEXT LOCKED</span>}
                     <span className="footer-mark">✳</span>
                   </div>
                 </article>
@@ -683,10 +689,10 @@ function App() {
                     })
                   }
                 >
-                  <ArrowLeft size={16} /> Предыдущий
+                  <ArrowLeft size={16} /> Previous
                 </button>
                 <span>
-                  {(project.selected || 0) + 1} из {deck.slides.length}
+                  {(project.selected || 0) + 1} of {deck.slides.length}
                 </span>
                 <button
                   className="subtle"
@@ -698,7 +704,7 @@ function App() {
                     })
                   }
                 >
-                  Следующий <ArrowRight size={16} />
+                  Next <ArrowRight size={16} />
                 </button>
               </div>
               {error && (
@@ -713,11 +719,10 @@ function App() {
                   <Sparkles size={18} />
                 </span>
                 <div>
-                  <h2>Настроим содержание</h2>
-                  <p>Ваш смысл, нужная подача</p>
+                  <h2>Refine your content</h2>
                 </div>
               </div>
-              <div className="section-label">ПРИМЕНИТЬ К</div>
+              <div className="section-label">APPLY TO</div>
               <div className="segmented">
                 <button
                   disabled={busy}
@@ -727,14 +732,14 @@ function App() {
                     if (slide) patch({ settings: slide.settings });
                   }}
                 >
-                  Этому слайду
+                  This slide
                 </button>
                 <button
                   disabled={busy}
                   className={scope === "deck" ? "active" : ""}
                   onClick={() => setScope("deck")}
                 >
-                  Всей презентации
+                  Entire presentation
                 </button>
               </div>
               {controls.map((c) => (
@@ -757,14 +762,19 @@ function App() {
                     max="2"
                     step="1"
                     value={project.settings[c.key]}
-                    onChange={(e) =>
+                    onChange={(e) => {
                       patch({
                         settings: {
                           ...project.settings,
                           [c.key]: Number(e.target.value),
                         },
-                      })
-                    }
+                      });
+                      setPendingRewrite({
+                        projectId: project.id,
+                        scope,
+                        slideId: slide?.id,
+                      });
+                    }}
                   />
                   <div className="range-labels">
                     <span>{c.levels[0]}</span>
@@ -775,7 +785,7 @@ function App() {
               <div className="lock-block">
                 <label>
                   <LockKeyhole size={17} />
-                  <span>Сохранить точный текст</span>
+                  <span>Keep exact wording</span>
                   <input
                     disabled={busy}
                     type="checkbox"
@@ -797,13 +807,6 @@ function App() {
                     }
                   />
                 </label>
-                <p>
-                  {someLocked
-                    ? allLocked
-                      ? "Текст зафиксирован. Графики и ручные правки доступны."
-                      : "Текст зафиксирован на части слайдов. Их формулировки сохранятся."
-                    : "Защитить формулировки от автоматической переработки."}
-                </p>
               </div>
               <button
                 className="primary apply"
@@ -811,13 +814,8 @@ function App() {
                 onClick={() => run(true)}
               >
                 <Sparkles size={16} />
-                {busy ? "Обновляем содержание…" : "Применить изменения"}
+                {busy ? "Updating content…" : "Apply changes"}
               </button>
-              <p className="settings-footnote">
-                Настройки применяются по кнопке.
-                <br />
-                Предыдущую генерацию можно отменить.
-              </p>
             </aside>
           </div>
         </main>
