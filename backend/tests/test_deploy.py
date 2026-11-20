@@ -55,12 +55,12 @@ def test_missing_key_fails_before_upload(tmp_path, monkeypatch):
 
 def test_archive_excludes_credentials(tmp_path):
     root = tmp_path/'repo'
-    for name in ('backend/Dockerfile','backend/requirements.txt','backend/deploy/compose.yml','backend/app/main.py','backend/deploy/slides.env','backend/app/__pycache__/secret.py','backend/hosts.json'):
+    for name in ('backend/Dockerfile','backend/go.mod','backend/schemas.json','backend/prompt.txt','backend/deploy/compose.yml','backend/main.go','backend/deploy/slides.env','backend/.env','backend/untracked/secret.go','backend/hosts.json'):
         p=root/name; p.parent.mkdir(parents=True, exist_ok=True); p.write_text(name)
     archive = tmp_path/'sources.tgz'
     deploy.archive_sources(root,archive)
     with tarfile.open(archive) as tar:
-        assert set(tar.getnames()) == {'backend/Dockerfile','backend/requirements.txt','backend/deploy/compose.yml','backend/app/main.py'}
+        assert set(tar.getnames()) == {'backend/Dockerfile','backend/go.mod','backend/schemas.json','backend/prompt.txt','backend/deploy/compose.yml','backend/main.go'}
 
 
 def test_frontend_config_preserves_other_values(tmp_path):

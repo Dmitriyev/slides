@@ -1,6 +1,6 @@
 # Slide Tuner
 
-Генерация и доработка содержания презентаций. `frontend` — React + TypeScript + Vite; `backend` — FastAPI; `docs` — API и развёртывание.
+Генерация и доработка содержания презентаций. `frontend` — React + TypeScript + Vite; `backend` — Go (net/http); `docs` — API и развёртывание.
 
 ## Деплой одной командой
 
@@ -40,16 +40,16 @@ npm run dev
 
 ## Локальный API
 
+Нужны Go 1.23+ и Poppler для PDF: `brew install poppler` на macOS или `apt-get install poppler-utils` на Debian/Ubuntu. DOCX/PPTX/TXT/MD/CSV читаются стандартной библиотекой Go.
+
 ```bash
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -r backend/requirements.txt
 cp backend/.env.example backend/.env
 # Заполнить ключи, затем загрузить переменные окружения:
 set -a
 . backend/.env
 set +a
-uvicorn app.main:app --app-dir backend --port 8280
+cd backend
+go run .
 ```
 
 Для локального API задайте во `frontend/.env` `SLIDES_API_URL=http://127.0.0.1:8280`.
@@ -61,7 +61,12 @@ cd frontend
 npm ci
 npm run test:history
 cd ..
-PYTHONPATH=backend pytest backend/tests -q
+cd backend
+go test -race ./...
+go vet ./...
+cd ..
+python3 -m pip install -r backend/requirements-dev.txt
+python3 -m pytest backend/tests/test_deploy.py -q
 ```
 
 См. [API](docs/api.md) и [развёртывание](docs/deployment.md).

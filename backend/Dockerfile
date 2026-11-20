@@ -1,9 +1,15 @@
-FROM python:3.12-slim
+FROM golang:1.24.13-bookworm AS build
+WORKDIR /src
+COPY go.mod ./
+COPY *.go schemas.json prompt.txt ./
+RUN CGO_ENABLED=0 go test ./... && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /slides-api .
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates poppler-utils \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --uid 10001 --no-create-home slides
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY app app
-RUN useradd --uid 10001 --create-home slides
+COPY --from=build /slides-api /app/slides-api
 USER slides
 EXPOSE 8280
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8280", "--limit-concurrency", "24"]
+ENTRYPOINT ["/app/slides-api"]

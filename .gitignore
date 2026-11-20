@@ -12,3 +12,6 @@ hosts.json
 *.tsbuildinfo
 
 backend/deploy/slides.env
+
+backend/slides-api
+backend/coverage.out

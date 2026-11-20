@@ -125,12 +125,12 @@ def frontend_config(path, host, token):
 
 def archive_sources(root, destination):
     # Explicit allowlist: local .env, hosts.json, .git, caches never enter the archive.
-    paths = [root / 'backend' / p for p in ('Dockerfile', 'requirements.txt', 'deploy/compose.yml')]
-    paths += sorted((root / 'backend/app').rglob('*.py'))
+    paths = [root / 'backend' / p for p in ('Dockerfile', 'go.mod', 'schemas.json', 'prompt.txt', 'deploy/compose.yml')]
+    paths += sorted((root / 'backend').glob('*.go'))
     with tarfile.open(destination, 'w:gz') as archive:
         for path in paths:
             if '__pycache__' in path.parts or path.is_symlink() or not path.is_file():
-                if path in paths[:3]:
+                if path in paths[:5]:
                     raise ValueError(f'Missing required source: {path}')
                 continue
             archive.add(path, arcname=str(path.relative_to(root)), recursive=False)
