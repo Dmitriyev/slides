@@ -134,7 +134,7 @@ def provider_schema(model: type[BaseModel]) -> dict:
         return node
     return loosen(model.model_json_schema())
 
-async def generate(payload: dict) -> Content:
+async def generate(payload: dict, response_model: type[BaseModel] = Content):
     key = os.getenv("OPENROUTER_API_KEY")
     if not key:
         raise HTTPException(503, "The generation API key is not configured on the server")
@@ -144,11 +144,11 @@ async def generate(payload: dict) -> Content:
                 response = await client.post("https://openrouter.ai/api/v1/chat/completions", headers={"Authorization": f"Bearer {key}"}, json={
                     "model": os.getenv("SLIDES_MODEL", "google/gemini-3.8-flash"),
                     "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
-                    "response_format": {"type": "json_schema", "json_schema": {"name": "presentation", "strict": True, "schema": provider_schema(Content)}},
+                    "response_format": {"type": "json_schema", "json_schema": {"name": "presentation", "strict": True, "schema": provider_schema(response_model)}},
                     "max_tokens": 14000,
                 })
                 response.raise_for_status()
-                return Content.model_validate_json(response.json()["choices"][0]["message"]["content"])
+                return response_model.model_validate_json(response.json()["choices"][0]["message"]["content"])
     except (httpx.HTTPError, ValueError, KeyError, IndexError, ValidationError) as exc:
         raise HTTPException(502, "Generation failed. Please try again; your current version has been preserved.") from exc
 
@@ -221,3 +221,79 @@ async def rewrite(request: Rewrite):
         changes[old.id] = new
     deck.slides = [changes.get(s.id, s) for s in deck.slides]
     return deck
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    text: str = Field(min_length=1, max_length=20000)
+
+class Alternative(BaseModel):
+    key: str = Field(max_length=200)
+    scope: Literal["slide", "deck"]
+    slide_id: str | None = None
+    settings: Settings
+    content: Content
+
+class ChatRequest(BaseModel):
+    deck: Deck
+    scope: Literal["slide", "deck"]
+    slide_id: str | None = None
+    settings: Settings
+    message: str = Field(min_length=1, max_length=20000)
+    messages: list[ChatMessage] = Field(default_factory=list, max_length=20)
+    alternatives: list[Alternative] = Field(default_factory=list, max_length=18)
+
+class ChatAnswer(BaseModel):
+    message: str = Field(min_length=1, max_length=20000)
+    content: Content | None = None
+
+class ChatResult(BaseModel):
+    message: str
+    deck: Deck
+    changed: bool
+
+@app.post("/api/v1/presentations/chat", response_model=ChatResult, dependencies=[Depends(authorize)])
+async def chat(request: ChatRequest):
+    deck = request.deck.model_copy(deep=True)
+    originals = {s.id: s for s in deck.slides}
+    if request.scope == "slide" and request.slide_id not in originals:
+        raise HTTPException(422, "Slide not found")
+    answer = await generate({
+        "task": "Ответь пользователю и выполни его правки. Для вопроса без правок верни content=null. "
+                "Ты видишь текущие слайды, исходники, историю диалога и альтернативные тексты с ключами. "
+                "Можешь использовать альтернативы по просьбе пользователя. При правках верни полное новое content "
+                "для указанной области scope. Для scope=slide верни ровно один слайд с исходным id. "
+                "Для scope=deck можно добавлять, удалять и переставлять слайды; сохраняй id существующих. "
+                "Не удаляй locked-слайды, сохраняй их title и paragraphs. Меняй settings только по просьбе. "
+                "Не вставляй служебную информацию и альтернативы в текст слайдов.",
+        "source": deck.source,
+        "current": {"title": deck.title, "slides": [s.model_dump() for s in deck.slides]},
+        "scope": request.scope, "slide_id": request.slide_id,
+        "settings": request.settings.model_dump(),
+        "alternatives": [a.model_dump() for a in request.alternatives],
+        "messages": [m.model_dump() for m in request.messages],
+        "message": request.message,
+    }, ChatAnswer)
+    if answer.content is None:
+        return ChatResult(message=answer.message, deck=deck, changed=False)
+    changed = answer.content.slides
+    ids = [s.id for s in changed]
+    if len(ids) != len(set(ids)):
+        raise HTTPException(502, "The model returned duplicate slide IDs. Your current version has been preserved.")
+    if request.scope == "slide":
+        if ids != [request.slide_id]:
+            raise HTTPException(502, "The model changed the selected scope. Your current version has been preserved.")
+    elif any(s.locked and s.id not in ids for s in deck.slides):
+        raise HTTPException(502, "The model removed a locked slide. Your current version has been preserved.")
+    for new in changed:
+        old = originals.get(new.id)
+        new.locked = old.locked if old else False
+        if old and old.locked:
+            new.title, new.paragraphs = old.title, old.paragraphs
+            new.settings = old.settings.model_copy(update={"charts": new.settings.charts})
+        clean_chart(new, deck.source, new.settings)
+    if request.scope == "slide":
+        deck.slides = [changed[0] if s.id == request.slide_id else s for s in deck.slides]
+    else:
+        deck.title, deck.slides = answer.content.title, changed
+    return ChatResult(message=answer.message, deck=deck, changed=deck != request.deck)

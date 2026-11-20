@@ -854,3 +854,38 @@ textarea {
     width: 85vw;
   }
 }
+
+.variant-status {
+  color: #81916f;
+  font-size: 10px;
+  margin: 6px 0 14px;
+}
+.variant-error {
+  font-size: 11px;
+  color: #8f503a;
+  margin: 10px 0;
+}
+.variant-error button {
+  text-decoration: underline;
+}
+.editor-chat {
+  border-top: 1px solid #dfe5d6;
+  margin-top: 24px;
+  padding-top: 22px;
+}
+.editor-chat .settings-heading {
+  margin-bottom: 12px;
+}
+.editor-chat .chat-log {
+  max-height: 340px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.editor-chat .chat-bubble {
+  flex-shrink: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.editor-chat textarea {
+  min-height: 80px;
+}

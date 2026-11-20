@@ -20,39 +20,35 @@ import {
 } from "lucide-react";
 import "./style.css";
 
-type Settings = {
-  detail: number;
-  complexity: number;
-  tone: number;
-  charts: number;
-};
-type Chart = {
-  title: string;
-  unit: string;
-  data: { label: string; value: number; evidence: string }[];
-};
-type Slide = {
-  id: string;
-  title: string;
-  paragraphs: string[];
-  chart: Chart | null;
-  note: string;
-  locked: boolean;
-  settings: Settings;
-};
-type Deck = { title: string; slides: Slide[]; source: string };
-type Project = {
-  id: string;
-  name: string;
-  updatedAt: string;
-  description: string;
-  count: number;
-  settings: Settings;
-  deck: Deck | null;
-  selected: number;
-};
+import {
+  type Settings,
+  type Slide,
+  type Deck,
+  type Project,
+  type Variant,
+  type ChatMessage,
+  contentOf,
+  newService,
+  variantKey,
+  neighborhood,
+  applyVariant,
+} from "./project";
 const defaults: Settings = { detail: 1, complexity: 1, tone: 1, charts: 1 };
 const STORAGE = "slide-tuner.projects.v1";
+let activeRewrites = 0;
+const rewriteQueue: (() => void)[] = [];
+async function limitedRewrite(work: () => Promise<Deck>) {
+  if (activeRewrites >= 2)
+    await new Promise<void>((resolve) => rewriteQueue.push(resolve));
+  else activeRewrites++;
+  try {
+    return await work();
+  } finally {
+    const next = rewriteQueue.shift();
+    if (next) next();
+    else activeRewrites--;
+  }
+}
 const controls: { key: keyof Settings; label: string; levels: string[] }[] = [
   {
     key: "detail",
@@ -75,7 +71,6 @@ const controls: { key: keyof Settings; label: string; levels: string[] }[] = [
     levels: ["Text only", "When relevant", "More charts"],
   },
 ];
-type ChatMessage = { role: "user" | "assistant"; text: string };
 const fresh = (): Project => ({
   id: crypto.randomUUID(),
   name: "New presentation",
@@ -85,6 +80,7 @@ const fresh = (): Project => ({
   settings: { ...defaults },
   deck: null,
   selected: 0,
+  service: newService(),
 });
 function readProjects(): { projects: Project[]; error: string } {
   try {
@@ -103,7 +99,13 @@ function readProjects(): { projects: Project[]; error: string } {
       )
     )
       throw Error();
-    return { projects: data, error: "" };
+    return {
+      projects: data.map((p: Project) => ({
+        ...p,
+        service: p.service || newService(p.deck),
+      })),
+      error: "",
+    };
   } catch {
     return {
       projects: [],
@@ -112,7 +114,10 @@ function readProjects(): { projects: Project[]; error: string } {
     };
   }
 }
-async function api(path: string, body: FormData | object): Promise<Deck> {
+async function api<T = Deck>(
+  path: string,
+  body: FormData | object,
+): Promise<T> {
   const response = await fetch("/api/v1/presentations/" + path, {
     method: "POST",
     headers:
@@ -142,10 +147,10 @@ function startProject(saved: Project[]): Project | null {
   return structuredClone(latest);
 }
 function App() {
-  const initial = useRef(readProjects());
-  const [projects, setProjects] = useState<Project[]>(initial.current.projects);
+  const [initial] = useState(readProjects);
+  const [projects, setProjects] = useState<Project[]>(initial.projects);
   const [project, setProject] = useState<Project | null>(() =>
-    initial.current.error ? null : startProject(initial.current.projects),
+    initial.error ? null : startProject(initial.projects),
   );
   const [files, setFiles] = useState<File[]>([]);
   const [scope, setScope] = useState<"slide" | "deck">("deck");
@@ -156,9 +161,16 @@ function App() {
     slideId?: string;
   } | null>(null);
   const [error, setError] = useState("");
-  const [storageError, setStorageError] = useState(initial.current.error);
-  const [history, setHistory] = useState<Deck[]>([]);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [storageError, setStorageError] = useState(initial.error);
+  const [chatInput, setChatInput] = useState("");
+  const [warming, setWarming] = useState(false);
+  const [variantError, setVariantError] = useState("");
+  const [warmRetry, setWarmRetry] = useState(0);
+  const history = project?.service.history || [];
+  const messages = project?.service.messages || [];
+  const current = useRef(project);
+  current.current = project;
+  const requests = useRef(new Map<string, Promise<Variant>>());
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const deck = project?.deck;
@@ -173,7 +185,7 @@ function App() {
     setProjects((old) => [project, ...old.filter((p) => p.id !== project.id)]);
   }, [project]);
   useEffect(() => {
-    if (initial.current.error) return;
+    if (initial.error) return;
     try {
       localStorage.setItem(STORAGE, JSON.stringify(projects));
       setStorageError("");
@@ -188,7 +200,8 @@ function App() {
   useEffect(() => {
     if (!pendingRewrite) return;
     if (
-      !deck || !project ||
+      !deck ||
+      !project ||
       pendingRewrite.projectId !== project.id ||
       pendingRewrite.scope !== scope ||
       pendingRewrite.slideId !== slide?.id
@@ -202,20 +215,202 @@ function App() {
       void run(true);
     }, 600);
     return () => window.clearTimeout(timer);
-  }, [pendingRewrite, project, scope, busy]);
+  }, [pendingRewrite, project?.id, scope, slide?.id, busy]);
 
-  function patch(change: Partial<Project>) {
+  function patch(change: Partial<Project>, edit = true) {
+    if (change.deck && edit) setPendingRewrite(null);
+    setProject((p) => {
+      if (!p) return p;
+      const next = { ...p, ...change, updatedAt: new Date().toISOString() };
+      if (change.deck && edit)
+        next.service = {
+          ...next.service,
+          revision: crypto.randomUUID(),
+          base: contentOf(change.deck),
+          variants: [],
+        };
+      return next;
+    });
+  }
+  function setMessages(update: (old: ChatMessage[]) => ChatMessage[]) {
     setProject(
-      (p) => p && { ...p, ...change, updatedAt: new Date().toISOString() },
+      (p) =>
+        p && {
+          ...p,
+          updatedAt: new Date().toISOString(),
+          service: {
+            ...p.service,
+            messages: update(p.service.messages).slice(-20),
+          },
+        },
     );
   }
+  function setHistory(update: (old: typeof history) => typeof history) {
+    setProject(
+      (p) =>
+        p && {
+          ...p,
+          service: {
+            ...p.service,
+            history: update(p.service.history).slice(-10),
+          },
+        },
+    );
+  }
+  function cached(
+    p: Project,
+    options: Settings,
+    targetScope = scope,
+    targetId = slide?.id,
+  ) {
+    return p.service.variants.find(
+      (v) => v.key === variantKey(targetScope, targetId, options),
+    );
+  }
+  async function loadVariant(
+    p: Project,
+    options: Settings,
+    targetScope: "slide" | "deck",
+    targetId?: string,
+  ) {
+    const key = variantKey(targetScope, targetId, options);
+    const latest = current.current;
+    const snapshot =
+      latest?.id === p.id && latest.service.revision === p.service.revision
+        ? latest
+        : p;
+    const found = cached(snapshot, options, targetScope, targetId);
+    if (found) return found;
+    const requestKey = JSON.stringify([p.id, p.service.revision, key]);
+    const existing = requests.current.get(requestKey);
+    if (existing) return existing;
+    const work = (async () => {
+      const base = p.service.base || contentOf(p.deck!);
+      const targets = base.slides.filter(
+        (s) => targetScope === "deck" || s.id === targetId,
+      );
+      const isBase =
+        targets.length > 0 &&
+        targets.every(
+          (s) => variantKey(targetScope, targetId, s.settings) === key,
+        );
+      const next = isBase
+        ? { ...base, source: p.deck!.source }
+        : await limitedRewrite(() => {
+            const latest = current.current;
+            if (
+              !latest ||
+              latest.id !== p.id ||
+              latest.service.revision !== p.service.revision
+            )
+              throw Error("Content changed; preparing new alternatives");
+            return api("rewrite", {
+              deck: { ...base, source: p.deck!.source },
+              scope: targetScope,
+              slide_id: targetId,
+              settings: options,
+            });
+          });
+      const variant: Variant = {
+        key,
+        scope: targetScope,
+        slide_id: targetId,
+        settings: options,
+        content:
+          targetScope === "deck"
+            ? contentOf(next)
+            : {
+                title: next.title,
+                slides: next.slides.filter((s) => s.id === targetId),
+              },
+      };
+      setProject((latest) => {
+        if (
+          !latest ||
+          latest.id !== p.id ||
+          latest.service.revision !== p.service.revision
+        )
+          return latest;
+        return {
+          ...latest,
+          service: {
+            ...latest.service,
+            variants: [
+              ...latest.service.variants.filter((v) => v.key !== key),
+              variant,
+            ].slice(-18),
+          },
+        };
+      });
+      return variant;
+    })();
+    requests.current.set(requestKey, work);
+    try {
+      return await work;
+    } finally {
+      requests.current.delete(requestKey);
+    }
+  }
+
+  // Two background workers. Results never replace the visible deck, and are
+  // accepted only for the same project and content revision.
+  const warmKey = project?.deck
+    ? JSON.stringify([
+        project.id,
+        project.service.revision,
+        scope,
+        scope === "slide" ? slide?.id : null,
+        project.settings,
+        warmRetry,
+      ])
+    : "";
+  useEffect(() => {
+    if (!warmKey || busy) return;
+    let cancelled = false;
+    const p = current.current!;
+    const targetId = p.deck?.slides[p.selected]?.id;
+    const options = neighborhood(p.settings);
+    let index = 0;
+    setWarming(true);
+    setVariantError("");
+    async function worker() {
+      while (!cancelled && index < options.length) {
+        const option = options[index++];
+        try {
+          const latest = current.current;
+          if (
+            !latest ||
+            latest.id !== p.id ||
+            latest.service.revision !== p.service.revision
+          )
+            return;
+          await loadVariant(latest, option, scope, targetId);
+        } catch (e) {
+          if (!cancelled)
+            setVariantError(
+              e instanceof Error ? e.message : "Could not prepare alternatives",
+            );
+          break;
+        }
+      }
+    }
+    const timer = window.setTimeout(() => {
+      void Promise.all([worker(), worker()]).finally(() => {
+        if (!cancelled) setWarming(false);
+      });
+    }, 700);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [warmKey, busy]);
   function backup() {
     const blob = new Blob(
       [
         JSON.stringify(
           {
             projects,
-            unreadableStorage: initial.current.error
+            unreadableStorage: initial.error
               ? localStorage.getItem(STORAGE)
               : undefined,
           },
@@ -235,8 +430,8 @@ function App() {
   function open(p: Project) {
     setProject(structuredClone(p));
     setFiles([]);
-    setHistory([]);
-    setMessages([]);
+    setChatInput("");
+    setPendingRewrite(null);
     setError("");
     setScope("deck");
   }
@@ -270,13 +465,14 @@ function App() {
     try {
       let next: Deck;
       if (rewrite && deck) {
-        next = await api("rewrite", {
-          deck,
+        const variant = await loadVariant(
+          project,
+          project.settings,
           scope,
-          slide_id: slide?.id,
-          settings: project.settings,
-        });
-        setHistory((old) => [...old.slice(-9), structuredClone(deck)]);
+          slide?.id,
+        );
+        next = applyVariant(deck, variant);
+        setHistory((old) => [...old, contentOf(deck)]);
       } else {
         const prompt = project.description.trim();
         setMessages((old) => [
@@ -296,10 +492,13 @@ function App() {
         files.forEach((f) => data.append("files", f));
         next = await api("generate", data);
       }
-      patch({
-        deck: next,
-        name: project.name === "New presentation" ? next.title : project.name,
-      });
+      patch(
+        {
+          deck: next,
+          name: project.name === "New presentation" ? next.title : project.name,
+        },
+        !rewrite,
+      );
       setFiles([]);
     } catch (e) {
       const message =
@@ -309,6 +508,67 @@ function App() {
         setMessages((old) => [...old, { role: "assistant", text: message }]);
     } finally {
       setBusy(false);
+    }
+  }
+  async function sendChat() {
+    if (!project || !deck || busy || !chatInput.trim()) return;
+    const text = chatInput.trim();
+    const previousMessages = [...messages];
+    setBusy(true);
+    setPendingRewrite(null);
+    setError("");
+    setMessages((old) => [...old, { role: "user", text }]);
+    setChatInput("");
+    try {
+      const result = await api<{
+        message: string;
+        deck: Deck;
+        changed: boolean;
+      }>("chat", {
+        deck,
+        scope,
+        slide_id: slide?.id,
+        settings: project.settings,
+        message: text,
+        messages: previousMessages,
+        alternatives: project.service.variants,
+      });
+      if (result.changed) {
+        setHistory((old) => [...old, contentOf(deck)]);
+        const selectedId = slide?.id;
+        const selected = Math.max(
+          0,
+          result.deck.slides.findIndex((s) => s.id === selectedId),
+        );
+        patch({
+          deck: result.deck,
+          selected,
+          settings: result.deck.slides[selected].settings,
+        });
+      }
+      setMessages((old) => [
+        ...old,
+        { role: "assistant", text: result.message },
+      ]);
+    } catch (e) {
+      const message =
+        e instanceof Error ? e.message : "Could not connect to the server";
+      setError(message);
+      setChatInput(text);
+    } finally {
+      setBusy(false);
+    }
+  }
+  function tune(options: Settings) {
+    if (!project || !deck) return;
+    const variant = cached(project, options);
+    if (variant) {
+      setPendingRewrite(null);
+      setHistory((old) => [...old, contentOf(deck)]);
+      patch({ settings: options, deck: applyVariant(deck, variant) }, false);
+    } else {
+      patch({ settings: options });
+      setPendingRewrite({ projectId: project.id, scope, slideId: slide?.id });
     }
   }
   return (
@@ -525,10 +785,7 @@ function App() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
-                      if (
-                        !busy &&
-                        (files.length || project.description.trim())
-                      )
+                      if (!busy && (files.length || project.description.trim()))
                         run();
                     }
                   }}
@@ -612,7 +869,16 @@ function App() {
                   className="subtle"
                   disabled={busy || !history.length}
                   onClick={() => {
-                    patch({ deck: history[history.length - 1] });
+                    const previous = history[history.length - 1];
+                    const selected = Math.min(
+                      project.selected,
+                      previous.slides.length - 1,
+                    );
+                    patch({
+                      deck: { ...previous, source: deck.source },
+                      selected,
+                      settings: previous.slides[selected].settings,
+                    });
                     setHistory((old) => old.slice(0, -1));
                   }}
                 >
@@ -763,16 +1029,9 @@ function App() {
                     step="1"
                     value={project.settings[c.key]}
                     onChange={(e) => {
-                      patch({
-                        settings: {
-                          ...project.settings,
-                          [c.key]: Number(e.target.value),
-                        },
-                      });
-                      setPendingRewrite({
-                        projectId: project.id,
-                        scope,
-                        slideId: slide?.id,
+                      tune({
+                        ...project.settings,
+                        [c.key]: Number(e.target.value),
                       });
                     }}
                   />
@@ -808,6 +1067,23 @@ function App() {
                   />
                 </label>
               </div>
+              <div className="variant-status" role="status">
+                {warming ? "Preparing alternatives… " : "Alternatives "}
+                {
+                  neighborhood(project.settings).filter((s) =>
+                    cached(project, s),
+                  ).length
+                }
+                /9
+              </div>
+              {variantError && (
+                <div className="variant-error" role="alert">
+                  {variantError}
+                  <button onClick={() => setWarmRetry((n) => n + 1)}>
+                    Retry
+                  </button>
+                </div>
+              )}
               <button
                 className="primary apply"
                 disabled={busy}
@@ -816,6 +1092,58 @@ function App() {
                 <Sparkles size={16} />
                 {busy ? "Updating content…" : "Apply changes"}
               </button>
+              <section className="editor-chat">
+                <div className="settings-heading">
+                  <MessageSquare size={18} />
+                  <h2>AI chat</h2>
+                </div>
+                <div
+                  className="chat-log"
+                  role="log"
+                  aria-label="Project chat"
+                  aria-live="polite"
+                >
+                  {messages.map((m, i) => (
+                    <div className={"chat-bubble " + m.role} key={i}>
+                      {m.text}
+                    </div>
+                  ))}
+                  {busy && <div role="status">Updating content…</div>}
+                </div>
+                <form
+                  className="chat-composer"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void sendChat();
+                  }}
+                >
+                  <label htmlFor="chat-message">Your changes</label>
+                  <textarea
+                    id="chat-message"
+                    value={chatInput}
+                    maxLength={20000}
+                    disabled={busy}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (
+                        e.key === "Enter" &&
+                        !e.shiftKey &&
+                        !e.nativeEvent.isComposing
+                      ) {
+                        e.preventDefault();
+                        void sendChat();
+                      }
+                    }}
+                  />
+                  <button
+                    className="primary"
+                    disabled={busy || !chatInput.trim()}
+                    type="submit"
+                  >
+                    Send <ArrowRight size={16} />
+                  </button>
+                </form>
+              </section>
             </aside>
           </div>
         </main>

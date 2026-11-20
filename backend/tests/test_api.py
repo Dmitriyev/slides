@@ -79,3 +79,62 @@ def test_deck_scope_and_failure_atomicity(client, monkeypatch):
 def test_invalid_target(client):
     deck = main.Deck(title='Deck', source='Material', slides=[main.Slide(title='One')])
     assert client.post('/api/v1/presentations/rewrite', json={'deck':deck.model_dump(),'scope':'slide','slide_id':'missing','settings':{}}).status_code == 422
+
+
+def chat_payload(scope='slide'):
+    deck = main.Deck(title='Deck', source='Material', slides=[
+        main.Slide(id='a', title='Manual', paragraphs=['Original'], locked=True),
+        main.Slide(id='b', title='Untouched'),
+    ])
+    return {'deck': deck.model_dump(), 'scope': scope, 'slide_id': 'a',
+            'settings': {}, 'message': 'Use the brief alternative',
+            'messages': [{'role': 'user', 'text': 'Remember the audience'}],
+            'alternatives': [{'key': 'brief', 'scope': 'slide', 'slide_id': 'a',
+                              'settings': {'detail': 0}, 'content': content('Brief alternative').model_dump()}]}
+
+
+def test_chat_context_scope_and_lock(client, monkeypatch):
+    changed = content('Model tried to change locked text')
+    changed.slides[0].id = 'a'
+    mock = AsyncMock(return_value=main.ChatAnswer(message='Updated', content=changed))
+    monkeypatch.setattr(main, 'generate', mock)
+    payload = chat_payload()
+    r = client.post('/api/v1/presentations/chat', json=payload)
+    assert r.status_code == 200
+    result = r.json()
+    assert result['deck']['slides'][0]['title'] == 'Manual'
+    assert result['deck']['slides'][0]['paragraphs'] == ['Original']
+    assert result['deck']['slides'][1] == payload['deck']['slides'][1]
+    context, model = mock.call_args.args
+    assert model is main.ChatAnswer
+    assert context['alternatives'][0]['content']['slides'][0]['title'] == 'Brief alternative'
+    assert context['messages'][0]['text'] == 'Remember the audience'
+    assert context['source'] == 'Material'
+
+
+def test_chat_answer_without_changes(client, monkeypatch):
+    monkeypatch.setattr(main, 'generate', AsyncMock(return_value=main.ChatAnswer(message='Here is the answer')))
+    payload = chat_payload()
+    r = client.post('/api/v1/presentations/chat', json=payload)
+    assert r.status_code == 200
+    assert r.json()['changed'] is False
+    assert r.json()['deck'] == payload['deck']
+
+
+@pytest.mark.parametrize('scope,ids', [('slide', ['b']), ('slide', ['a', 'b']), ('deck', ['b']), ('deck', ['a', 'a'])])
+def test_chat_rejects_invalid_edits(client, monkeypatch, scope, ids):
+    slides = [main.Slide(id=i, title='Changed') for i in ids]
+    mock = AsyncMock(return_value=main.ChatAnswer(message='Changed', content=main.Content(title='Deck', slides=slides)))
+    monkeypatch.setattr(main, 'generate', mock)
+    assert client.post('/api/v1/presentations/chat', json=chat_payload(scope)).status_code == 502
+
+
+def test_chat_can_add_and_reorder_slides(client, monkeypatch):
+    payload = chat_payload('deck')
+    slides = [main.Slide(id='b', title='Reordered'), main.Slide(id='new', title='Added'), main.Slide(id='a', title='Locked')]
+    monkeypatch.setattr(main, 'generate', AsyncMock(return_value=main.ChatAnswer(message='Added a slide', content=main.Content(title='New deck', slides=slides))))
+    r = client.post('/api/v1/presentations/chat', json=payload)
+    assert r.status_code == 200
+    assert [s['id'] for s in r.json()['deck']['slides']] == ['b', 'new', 'a']
+    assert r.json()['deck']['slides'][-1]['title'] == 'Manual'
+    assert r.json()['changed'] is True

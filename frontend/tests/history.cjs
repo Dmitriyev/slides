@@ -35,6 +35,11 @@ const result = {
 };
 let rewriteRequest;
 let rewriteCount = 0;
+let chatRequest;
+let failChat = false;
+let rewriteHook;
+let active = 0;
+let maxActive = 0;
 async function launch(saved) {
   const dom = new JSDOM(
     '<html><head></head><body><div id="root"></div></body></html>',
@@ -50,7 +55,53 @@ async function launch(saved) {
     if (url.endsWith("rewrite")) {
       rewriteCount++;
       rewriteRequest = JSON.parse(options.body);
-      return { ok: true, json: async () => rewriteRequest.deck };
+      const request = JSON.parse(options.body);
+      active++;
+      maxActive = Math.max(maxActive, active);
+      try {
+        if (rewriteHook) await rewriteHook(request);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        const deck = structuredClone(request.deck);
+        deck.slides = deck.slides.map((s) =>
+          request.scope === "deck" || s.id === request.slide_id
+            ? {
+                ...s,
+                title: s.locked
+                  ? s.title
+                  : `Variant ${request.settings.detail}/${request.settings.complexity}/${request.settings.tone}/${request.settings.charts}`,
+                settings: s.locked
+                  ? { ...s.settings, charts: request.settings.charts }
+                  : request.settings,
+              }
+            : s,
+        );
+        return { ok: true, json: async () => deck };
+      } finally {
+        active--;
+      }
+    }
+    if (url.endsWith("chat")) {
+      chatRequest = JSON.parse(options.body);
+      if (failChat)
+        return {
+          ok: false,
+          status: 502,
+          json: async () => ({ detail: "Provider unavailable" }),
+        };
+      const deck = structuredClone(chatRequest.deck);
+      deck.slides = deck.slides.map((s) =>
+        s.id === chatRequest.slide_id
+          ? { ...s, paragraphs: ["Edited through chat"] }
+          : s,
+      );
+      return {
+        ok: true,
+        json: async () => ({
+          deck,
+          changed: true,
+          message: "Updated the selected slide",
+        }),
+      };
     }
     return { ok: true, json: async () => structuredClone(result) };
   };
@@ -103,47 +154,134 @@ async function input(dom, selector, value) {
     "A presentation draft",
   );
   await click(dom, "Generate content");
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  assert.equal(rewriteCount, 0, "Initial generation must not cause a rewrite");
+  const state = () => JSON.parse(dom.window.localStorage.getItem(key))[0];
+  async function until(predicate) {
+    for (let n = 0; n < 150; n++) {
+      if (predicate()) return;
+      await wait();
+    }
+    assert.fail("Timed out waiting for state");
+  }
+  await until(() => state().service.variants.length === 9);
+  assert.equal(
+    rewriteCount,
+    8,
+    "The initial version plus eight alternatives makes nine",
+  );
+  assert.ok(maxActive <= 2, "Background work must have bounded concurrency");
+  assert.equal(
+    dom.window.document.querySelector(".slide-title").value,
+    "First slide",
+    "Prefetch must not replace visible content",
+  );
+  const countBeforeHit = rewriteCount;
   await input(dom, "#detail", "2");
-  await input(dom, "#tone", "2");
-  await input(dom, "#charts", "0");
-  assert.equal(rewriteCount, 0, "Slider changes should be debounced");
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  assert.equal(rewriteCount, 1, "Rapid slider changes produce one request");
-  assert.equal(rewriteRequest.scope, "deck");
-  assert.equal(rewriteRequest.settings.detail, 2);
-  assert.equal(rewriteRequest.settings.tone, 2);
-  assert.equal(rewriteRequest.settings.charts, 0);
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  assert.equal(rewriteCount, 1, "Response must not trigger another rewrite");
+  assert.equal(
+    dom.window.document.querySelector(".slide-title").value,
+    "Variant 2/1/1/1",
+    "A cached option must apply immediately",
+  );
+  assert.equal(
+    rewriteCount,
+    countBeforeHit,
+    "Cached switching must not make a foreground request",
+  );
+  await input(dom, "#detail", "1");
+  assert.equal(
+    dom.window.document.querySelector(".slide-title").value,
+    "First slide",
+    "Returning to the base must restore the exact original text",
+  );
   await click(dom, "This slide");
+  await until(
+    () =>
+      state().service.variants.filter((v) => v.scope === "slide").length === 9,
+  );
+  const other = structuredClone(state().deck.slides[1]);
   await input(dom, "#complexity", "0");
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  assert.equal(rewriteCount, 2);
-  assert.equal(rewriteRequest.scope, "slide");
-  assert.equal(rewriteRequest.slide_id, "one");
+  assert.equal(
+    dom.window.document.querySelector(".slide-title").value,
+    "Variant 1/0/1/1",
+  );
+  assert.deepEqual(
+    state().deck.slides[1],
+    other,
+    "Cached slide variants preserve other slides",
+  );
+  await input(dom, "#complexity", "1");
   await input(dom, "#detail", "0");
+  await input(dom, "#complexity", "2");
   await click(dom, "Next");
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  assert.equal(rewriteCount, 2, "Navigation must cancel pending generation");
+  await wait();
+  assert.equal(state().selected, 1);
+  assert.deepEqual(
+    state().deck.slides[1],
+    other,
+    "Navigation cancels a pending slider rewrite",
+  );
   await click(dom, "Previous");
-  await input(dom, "#detail", "2");
-  await click(dom, "Entire presentation");
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  assert.equal(rewriteCount, 2, "Scope changes must cancel pending generation");
   await input(dom, ".slide-title", "Manual title");
+  assert.equal(
+    state().service.variants.length,
+    0,
+    "Manual edits invalidate previous alternatives",
+  );
+  const revision = state().service.revision;
   dom.window.document.querySelector('input[type="checkbox"]').click();
   await wait();
   assert.ok(dom.window.document.querySelector("#detail").disabled);
-  await click(dom, "This slide");
-  await click(dom, "Apply changes");
-  assert.equal(rewriteRequest.scope, "slide");
-  assert.equal(rewriteRequest.slide_id, "one");
-  assert.equal(rewriteRequest.deck.slides[0].title, "Manual title");
+  assert.notEqual(
+    state().service.revision,
+    revision,
+    "Lock changes invalidate alternatives too",
+  );
+  // Unlock to exercise arbitrary chat edits after alternatives are prepared.
+  dom.window.document.querySelector('input[type="checkbox"]').click();
+  await until(() => state().service.variants.length === 9);
+  const beforeChat = state().service.revision;
+  await input(dom, "#chat-message", "Rewrite the selected slide for investors");
+  await click(dom, "Send");
+  assert.equal(chatRequest.scope, "slide");
+  assert.equal(chatRequest.slide_id, "one");
+  assert.equal(chatRequest.deck.slides[0].title, "Manual title");
+  assert.equal(
+    chatRequest.alternatives.length,
+    9,
+    "The chat agent must see alternative texts",
+  );
+  assert.ok(
+    chatRequest.messages.some((m) => m.text === "A presentation draft"),
+  );
+  assert.equal(state().deck.slides[0].paragraphs[0], "Edited through chat");
+  assert.notEqual(state().service.revision, beforeChat);
+  await click(dom, "Undo generation");
+  assert.equal(state().deck.slides[0].paragraphs[0], "Original paragraph", "Undo must restore the pre-chat version");
+  assert.deepEqual(state().settings, state().deck.slides[state().selected].settings, "Undo restores settings with content");
+  assert.equal(
+    state().service.messages.at(-1).text,
+    "Updated the selected slide",
+  );
+  const preserved = structuredClone(state().deck);
+  failChat = true;
+  await input(dom, "#chat-message", "Another edit");
+  await click(dom, "Send");
+  assert.deepEqual(
+    state().deck,
+    preserved,
+    "Failed chat requests preserve the deck",
+  );
+  assert.equal(
+    dom.window.document.querySelector("#chat-message").value,
+    "Another edit",
+  );
+  failChat = false;
+  dom.window.document.querySelector('input[type="checkbox"]').click();
+  await wait();
   saved = dom.window.localStorage.getItem(key);
+  assert.equal(JSON.parse(saved)[0].deck.slides[0].locked, true);
   dom.window.close();
   dom = await launch(saved);
+  await click(dom, "This slide");
   assert.equal(
     dom.window.document.querySelector(".slide-title").value,
     "Manual title",
@@ -152,13 +290,56 @@ async function input(dom, selector, value) {
     dom.window.document.querySelector('input[type="checkbox"]').checked,
   );
   assert.ok(dom.window.document.querySelector("#detail").disabled);
+  assert.ok(
+    dom.window.document
+      .querySelector('[role="log"]')
+      .textContent.includes("Updated the selected slide"),
+    "Chat history survives reload",
+  );
   await click(dom, "All projects");
   await click(dom, "New project");
   await input(dom, "#description", "Second draft");
   assert.equal(JSON.parse(dom.window.localStorage.getItem(key)).length, 2);
   dom.window.close();
+  // A late background response must never restore pre-edit alternatives.
+  rewriteCount = 0;
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  rewriteHook = () => gate;
+  const legacy = [
+    {
+      id: "legacy",
+      name: "Legacy",
+      updatedAt: new Date().toISOString(),
+      description: "Brief",
+      count: 2,
+      settings,
+      deck: result,
+      selected: 0,
+    },
+  ];
+  dom = await launch(JSON.stringify(legacy));
+  await until(() => rewriteCount >= 1);
+  await input(dom, ".slide-title", "New revision");
+  release();
+  rewriteHook = undefined;
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(
+    dom.window.document.querySelector(".slide-title").value,
+    "New revision",
+  );
+  assert.equal(
+    state().service.variants.length,
+    0,
+    "Late responses from previous revisions must be discarded",
+  );
+  await until(() => state().service.variants.length === 9);
+  assert.equal(maxActive <= 2, true);
+  dom.window.close();
   console.log(
-    "PASS: draft autosave, project history, reopen after reload, manual text, lock, rewrite scope, automatic debounced rewrite, navigation cancellation, no duplicate projects",
+    "PASS: migration, autosave, nine alternatives, instant cache hits, bounded concurrency, scope, stale responses, manual edits, chat context, chat failure recovery, reload and history",
   );
 })().catch((error) => {
   console.error(error);
